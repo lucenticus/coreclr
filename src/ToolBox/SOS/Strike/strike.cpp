@@ -300,7 +300,7 @@ DECLARE_API(IP2MD)
     char  filename[MAX_PATH_FNAME+1];
     ULONG linenum;
     // symlines will be non-zero only if SYMOPT_LOAD_LINES was set in the symbol options
-    ULONG symlines = 0;
+    ULONG symlines = 1;
     if (SUCCEEDED(g_ExtSymbols->GetSymbolOptions(&symlines)))
     {
         symlines &= SYMOPT_LOAD_LINES;
@@ -11562,12 +11562,12 @@ private:
         IfFailRet(pLocalsEnum->GetCount(&cLocals));
         if (cLocals > 0 && bLocals)
         {
-#ifndef FEATURE_PAL
+            //#ifndef FEATURE_PAL
             bool symbolsAvailable = false;
             SymbolReader symReader;
             if(SUCCEEDED(symReader.LoadSymbols(pMD, pModule)))
                 symbolsAvailable = true;
-#endif
+            //#endif
             ExtOut("\nLOCALS:\n");
             for (ULONG i=0; i < cLocals; i++)
             {
@@ -11575,13 +11575,13 @@ private:
                 WCHAR paramName[mdNameLen] = W("\0");
 
                 ToRelease<ICorDebugValue> pValue;
-#ifndef FEATURE_PAL
+                //#ifndef FEATURE_PAL
                 if(symbolsAvailable)
                 {
                     Status = symReader.GetNamedLocalVariable(pILFrame, i, paramName, mdNameLen, &pValue);
                 }
                 else
-#endif
+                    //#endif
                 {
                     ULONG cArgsFetched;
                     Status = pLocalsEnum->Next(1, &pValue, &cArgsFetched);

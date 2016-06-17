@@ -52,6 +52,7 @@ PIMAGEHLP_SYMBOL sym = (PIMAGEHLP_SYMBOL) symBuffer;
 void *SymbolReader::coreclrLib;
 ResolveSequencePointDelegate SymbolReader::resolveSequencePointDelegate;
 LoadSymbolsForModuleDelegate SymbolReader::loadSymbolsForModuleDelegate;
+GetLocalVariableName SymbolReader::getLocalVariableNameDelegate;
 #endif // !FEATURE_PAL
 
 const char * const CorElementTypeName[ELEMENT_TYPE_MAX]=
@@ -3607,8 +3608,7 @@ BOOL GetEEVersion(VS_FIXEDFILEINFO *pFileInfo)
     _ASSERTE(g_ExtSymbols2);
     _ASSERTE(pFileInfo);
     // Grab the version info directly from the module.
-    return g_ExtSymbols2->GetModuleVersionInformation(DEBUG_ANY_ID,
-                                                   moduleInfo[GetEEFlavor()].baseAddr,
+    return g_ExtSymbolsfo[GetEEFlavor()].baseAddr,
                                                    "\\", pFileInfo, sizeof(VS_FIXEDFILEINFO), NULL) == S_OK;
 }
 
@@ -6284,6 +6284,11 @@ HRESULT SymbolReader::LoadCoreCLR() {
                         SymbolReaderClassName, "LoadSymbolsForModule",
                         (void **)&loadSymbolsForModuleDelegate);
     IfFailRet(Status);
+    Status = CreateDelegate(hostHandle, domainId, SymbolReaderDllName,
+                        SymbolReaderClassName, "GetLocalVariableName",
+                        (void **)&getLocalVariableNameDelegate);
+    IfFailRet(Status);
+
     return Status;
 }
 #endif //FEATURE_PAL
@@ -6363,20 +6368,46 @@ HRESULT SymbolReader::LoadSymbols(IMetaDataImport * pMD, ULONG64 baseAddress, __
     if (Status != S_OK)
         return Status;
 
-    char szName[mdNameLen];
     WideCharToMultiByte(CP_ACP, 0, pModuleName, (int) (_wcslen(pModuleName) + 1),
-            szName, mdNameLen, NULL, NULL);
-    return !loadSymbolsForModuleDelegate(szName);
+            m_szModuleName, mdNameLen, NULL, NULL);
+    return !loadSymbolsForModuleDelegate(m_szModuleName);
 #endif // FEATURE_PAL
 }
 
 HRESULT SymbolReader::GetNamedLocalVariable(ISymUnmanagedScope * pScope, ICorDebugILFrame * pILFrame, mdMethodDef methodToken, ULONG localIndex, __inout_ecount(paramNameLen) WCHAR* paramName, ULONG paramNameLen, ICorDebugValue** ppValue)
 {
     HRESULT Status = S_OK;
+#ifdef FEATURE_PAL
+    if (getLocalVariableNameDelegate == nullptr)
+        Status = LoadCoreCLR();
+    if (Status != S_OK)
+        return Status;
+    WCHAR *paramNameBSTR = new NOTHROW WCHAR[mdNameLen];
+    int ret = 0;
+    ret = getLocalVariableNameDelegate(m_szModuleName, methodToken, 0,
+                                       localIndex, &paramNameBSTR);
+    memcpy(paramName, paramNameBSTR, _wcslen(paramNameBSTR) + 1);
+    paramNameLen = _wcslen(paramName);
+    delete []paramNameBSTR;
+    if (ret) {
+      if (SUCCEEDED(pILFrame->GetLocalVariable(localIndex, ppValue)) &&
+          (*ppValue != NULL)) {
+        return S_OK;
+      } else {
+        *ppValue = NULL;
+        return E_FAIL;
+      }
+    }
 
+    // else
+    //   fprintf(stderr, "Can't get local var\n");
+    return Status;
+
+//#endif //FEATURE_PAL
+
+#else
     if(pScope == NULL)
     {
-#ifndef FEATURE_PAL
         ToRelease<ISymUnmanagedMethod> pSymMethod;
         IfFailRet(m_pSymReader->GetMethod(methodToken, &pSymMethod));
 
@@ -6384,10 +6415,7 @@ HRESULT SymbolReader::GetNamedLocalVariable(ISymUnmanagedScope * pScope, ICorDeb
         IfFailRet(pSymMethod->GetRootScope(&pScope));
 
         return GetNamedLocalVariable(pScope, pILFrame, methodToken, localIndex, paramName, paramNameLen, ppValue);
-#else
-        return E_FAIL;
-#endif // FEATURE_PAL
-    }
+        }
     else
     {
         ULONG32 numVars = 0;
@@ -6395,6 +6423,15 @@ HRESULT SymbolReader::GetNamedLocalVariable(ISymUnmanagedScope * pScope, ICorDeb
 
         ArrayHolder<ISymUnmanagedVariable*> pLocals = new ISymUnmanagedVariable*[numVars];
         IfFailRet(pScope->GetLocals(numVars, &numVars, pLocals));
+        //#ifdef FEATURE_PAL
+        // ULONG32 Offset = 0;
+        // pScope->GetStartOffset(&Offset);
+        // if (!Offset) {
+        //     ExtOut("Failed to get Offset from pScope.\n");
+        //     return E_FAIL;
+        // }
+        //#endif //FEATURE_PAL
+
 
         for(ULONG i = 0; i < numVars; i++)
         {
@@ -6404,7 +6441,8 @@ HRESULT SymbolReader::GetNamedLocalVariable(ISymUnmanagedScope * pScope, ICorDeb
                 if(varIndexInMethod != localIndex)
                     continue;
 
-                ULONG32 nameLen = 0; 
+                ULONG32 nameLen = 0;
+
                 if(FAILED(pLocals[i]->GetName(paramNameLen, &nameLen, paramName)))
                         swprintf_s(paramName, paramNameLen, W("local_%d\0"), localIndex);
 
@@ -6440,7 +6478,9 @@ HRESULT SymbolReader::GetNamedLocalVariable(ISymUnmanagedScope * pScope, ICorDeb
         for(ULONG j = 0; j < numChildren; j++) pChildren[j]->Release();
 
     }
+
     return E_FAIL;
+#endif // FEATURE_PAL
 }
 
 HRESULT SymbolReader::GetNamedLocalVariable(ICorDebugFrame * pFrame, ULONG localIndex, __inout_ecount(paramNameLen) WCHAR* paramName, ULONG paramNameLen, ICorDebugValue** ppValue)
