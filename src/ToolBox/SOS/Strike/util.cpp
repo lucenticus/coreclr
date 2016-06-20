@@ -6382,14 +6382,14 @@ HRESULT SymbolReader::GetNamedLocalVariable(ISymUnmanagedScope * pScope, ICorDeb
         Status = LoadCoreCLR();
     if (Status != S_OK)
         return Status;
-    WCHAR *paramNameBSTR = new NOTHROW WCHAR[mdNameLen];
+    WCHAR *paramNameBSTR = new WCHAR[mdNameLen];
     int ret = 0;
     ret = getLocalVariableNameDelegate(m_szModuleName, methodToken, 0,
                                        localIndex, &paramNameBSTR);
-    memcpy(paramName, paramNameBSTR, _wcslen(paramNameBSTR) + 1);
-    paramNameLen = _wcslen(paramName);
-    delete []paramNameBSTR;
     if (ret) {
+      wcscpy_s(paramName, _wcslen(paramNameBSTR) + 1, paramNameBSTR);
+      paramNameLen = _wcslen(paramName);
+
       if (SUCCEEDED(pILFrame->GetLocalVariable(localIndex, ppValue)) &&
           (*ppValue != NULL)) {
         return S_OK;
@@ -6401,7 +6401,7 @@ HRESULT SymbolReader::GetNamedLocalVariable(ISymUnmanagedScope * pScope, ICorDeb
 
     // else
     //   fprintf(stderr, "Can't get local var\n");
-    return Status;
+    return E_FAIL;
 
 //#endif //FEATURE_PAL
 
