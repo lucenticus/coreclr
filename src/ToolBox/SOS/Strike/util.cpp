@@ -5578,7 +5578,7 @@ NoOutputHolder::~NoOutputHolder()
 // Code to support mapping RVAs to managed code line numbers.
 //
 
-#ifndef FEATURE_PAL
+//#ifndef FEATURE_PAL
 
 // 
 // This function retrieves ImageInfo related to the module
@@ -5851,7 +5851,7 @@ ConvertNativeToIlOffset(
     return Status;
 }
 
-#endif // FEATURE_PAL
+//#endif // FEATURE_PAL
 
 // Based on a native offset, passed in the first argument this function
 // identifies the corresponding source file name and line number.
@@ -5865,7 +5865,7 @@ GetLineByOffset(
     HRESULT hr = S_OK;
     ULONG64 displacement = 0;
 
-#ifndef FEATURE_PAL
+    //#ifndef FEATURE_PAL
     // first let's try it the hard way, this will work with the public debuggers
     {
         ImageInfo Image = {0};
@@ -5874,12 +5874,12 @@ GetLineByOffset(
         ULONG32 MethodOffs;
         ULONG64 IlOffset;
 
-        ToRelease<IDebugSymbols3> spSym3(NULL);
-        if (FAILED(g_ExtSymbols->QueryInterface(__uuidof(IDebugSymbols3), (void**)&spSym3)))
-        {
-            hr = E_FAIL;
-            goto fallback;
-        }
+        // ToRelease<IDebugSymbols3> spSym3(NULL);
+        // if (FAILED(g_ExtSymbols->QueryInterface(__uuidof(IDebugSymbols3), (void**)&spSym3)))
+        // {
+        //     hr = E_FAIL;
+        //     goto fallback;
+        // }
 
         // find the image, method token and IL offset that correspond
         // to "Offset"
@@ -5888,17 +5888,17 @@ GetLineByOffset(
         {
             goto fallback;
         }
-        modBase = Image.modBase;
-        DEBUG_MODULE_AND_ID id;
-        DEBUG_SYMBOL_ENTRY symInfo;
-        if (FAILED(spSym3->GetSymbolEntryByToken(modBase, MethodToken, &id))
-            || FAILED(spSym3->GetSymbolEntryInformation(&id, &symInfo)))
-        {
-            hr = E_FAIL;
-            goto fallback;
-        }
+        // modBase = Image.modBase;
+        // DEBUG_MODULE_AND_ID id;
+        // DEBUG_SYMBOL_ENTRY symInfo;
+        // if (FAILED(spSym3->GetSymbolEntryByToken(modBase, MethodToken, &id))
+        //     || FAILED(spSym3->(&id, &symInfo)))
+        // {
+        //     hr = E_FAIL;
+        //     goto fallback;
+        // }
 
-        IlOffset = symInfo.Offset + MethodOffs;
+        IlOffset = /*symInfo.Offset*/  MethodOffs;
 
         //
         // Source maps for managed code can end
@@ -5935,7 +5935,7 @@ GetLineByOffset(
     }
 
 fallback:
-#endif // FEATURE_PAL
+    //#endif // FEATURE_PAL
     return g_ExtSymbols->GetLineByOffset(
                     Offset, 
                     pLinenum,
