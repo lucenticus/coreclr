@@ -5714,8 +5714,10 @@ GetMethodInstanceTokenAndScope(
     {
         return Status;
     }
+#ifndef FEATURE_PAL
 
     Status = FindClrModuleImage(Module, Image);
+#endif //FEATURE_PAL
 
     Module->Release();
     return Status;
