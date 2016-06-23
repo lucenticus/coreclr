@@ -532,7 +532,7 @@ void
 
         // Print out line numbers if needed
         if (!bSuppressLines
-            && SUCCEEDED(GetLineByOffset(TO_CDADDR(IP), 
+            && SUCCEEDED(GetLineByOffset(TO_CDADDR(IP), NULL,
                            &linenum, filename, MAX_PATH_FNAME+1)))
         {
             if (linenum != curLine)

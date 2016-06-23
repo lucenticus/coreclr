@@ -2358,6 +2358,7 @@ private:
 #ifdef FEATURE_PAL
 typedef  int (*ResolveSequencePointDelegate)(const char*, const char*, unsigned int, unsigned int*, unsigned int*);
 typedef  int (*LoadSymbolsForModuleDelegate)(const char*);
+typedef  int (*GetLineByILOffsetDelegate)(const char*, mdMethodDef, ULONG64, ULONG *);
 static const char *SymbolReaderDllName = "System.Diagnostics.Debug.SymbolReader";
 static const char *SymbolReaderClassName = "System.Diagnostics.Debug.SymbolReader.SymbolReader";
 #endif //FEATURE_PAL
@@ -2370,6 +2371,8 @@ private:
     static void *coreclrLib;
     static ResolveSequencePointDelegate resolveSequencePointDelegate;
     static LoadSymbolsForModuleDelegate loadSymbolsForModuleDelegate;
+    static GetLineByILOffsetDelegate getLineByILOffsetDelegate;
+
 #endif
 
 private:
@@ -2390,6 +2393,7 @@ public:
 #ifdef FEATURE_PAL
     static HRESULT LoadCoreCLR();
     static bool SymbolReaderDllExists();
+    static HRESULT GetLineByILOffset(__in_z char* szModuleName, mdMethodDef MethodToken, ULONG64 IlOffset, ___out ULONG *pLinenum);
 #endif //FEATURE_PAL
     HRESULT LoadSymbols(IMetaDataImport * pMD, ICorDebugModule * pModule);
     HRESULT LoadSymbols(IMetaDataImport * pMD, ULONG64 baseAddress, __in_z WCHAR* pModuleName, BOOL isInMemory);
@@ -2401,6 +2405,7 @@ public:
 HRESULT
 GetLineByOffset(
         ___in ULONG64 IP,
+        ___in char *szModuleName,
         ___out ULONG *pLinenum,
         __out_ecount(cbFileName) LPSTR lpszFileName,
         ___in ULONG cbFileName);

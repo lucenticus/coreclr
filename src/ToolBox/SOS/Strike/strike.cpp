@@ -307,7 +307,8 @@ DECLARE_API(IP2MD)
     }
 
     if (symlines != 0
-        && SUCCEEDED(GetLineByOffset(TO_CDADDR(IP), 
+        && SUCCEEDED(GetLineByOffset(TO_CDADDR(IP),
+                         NULL,
                          &linenum,
                          filename,
                          MAX_PATH_FNAME+1)))
@@ -2308,7 +2309,8 @@ size_t FormatGeneratedException (DWORD_PTR dataPtr,
             char filename[MAX_LONGPATH+1] = "";
             ULONG linenum = 0;
             if (bLineNumbers
-                    && FAILED(GetLineByOffset(TO_CDADDR(ste.ip), 
+                    && FAILED(GetLineByOffset(TO_CDADDR(ste.ip),
+                                     NULL,
                                      &linenum,
                                      filename,
                                      _countof(filename))))

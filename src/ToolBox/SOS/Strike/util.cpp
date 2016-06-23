@@ -52,6 +52,7 @@ PIMAGEHLP_SYMBOL sym = (PIMAGEHLP_SYMBOL) symBuffer;
 void *SymbolReader::coreclrLib;
 ResolveSequencePointDelegate SymbolReader::resolveSequencePointDelegate;
 LoadSymbolsForModuleDelegate SymbolReader::loadSymbolsForModuleDelegate;
+GetLineByILOffsetDelegate SymbolReader::getLineByILOffsetDelegate;
 #endif // !FEATURE_PAL
 
 const char * const CorElementTypeName[ELEMENT_TYPE_MAX]=
@@ -5860,6 +5861,7 @@ ConvertNativeToIlOffset(
 HRESULT
 GetLineByOffset(
     ___in ULONG64 Offset,
+    ___in char *szModuleName,
     ___out ULONG *pLinenum,
     __out_ecount(cbFileName) LPSTR lpszFileName,
     ___in ULONG cbFileName)
@@ -5899,9 +5901,25 @@ GetLineByOffset(
         //     hr = E_FAIL;
         //     goto fallback;
         // }
+        IXCLRDataMethodInstance* MethodInst;
+        if ((hr = GetClrMethodInstance(Offset, &MethodInst)) != S_OK)
+        {
+            goto fallback;
+        }
+ 
+        IXCLRDataModule *Module;
+        if ((hr = MethodInst->GetTokenAndScope(&MethodToken, &Module)) != S_OK) {
+            goto fallback;
+        }
+
 
         IlOffset = /*symInfo.Offset*/  MethodOffs;
+#ifdef FEATURE_PAL
 
+        return SymbolReader::GetLineByILOffset(szModuleName, MethodToken, IlOffset, pLinenum);
+
+
+#endif //FEATURE_PAL
         //
         // Source maps for managed code can end
         // up with special 0xFEEFEE markers that
@@ -6285,8 +6303,24 @@ HRESULT SymbolReader::LoadCoreCLR() {
     Status = CreateDelegate(hostHandle, domainId, SymbolReaderDllName,
                         SymbolReaderClassName, "LoadSymbolsForModule",
                         (void **)&loadSymbolsForModuleDelegate);
-    IfFailRet(Status);
+    IfFailRet(CreateDelegate(hostHandle, domainId, SymbolReaderDllName,
+                        SymbolReaderClassName, "GetLineByILOffset",
+                             (void **)&getLineByILOffsetDelegate));
     return Status;
+}
+HRESULT SymbolReader::GetLineByILOffset(__in_z char* szModuleName, mdMethodDef MethodToken, ULONG64 IlOffset, ___out ULONG *pLinenum)
+{
+    HRESULT Status = S_OK;
+
+    if (getLineByILOffsetDelegate == nullptr)
+    {
+        Status = SymbolReader::LoadCoreCLR();
+    }
+    if (Status != S_OK)
+    {
+        return Status;
+    }
+    return getLineByILOffsetDelegate(szModuleName, MethodToken, IlOffset, pLinenum);
 }
 #endif //FEATURE_PAL
 HRESULT SymbolReader::LoadSymbols(IMetaDataImport * pMD, ULONG64 baseAddress, __in_z WCHAR* pModuleName, BOOL isInMemory)
@@ -6644,6 +6678,7 @@ WString MethodNameFromIP(CLRDATA_ADDRESS ip, BOOL bSuppressLines, BOOL bAssembly
     else
     {
         DacpMethodDescData mdescData;
+        ArrayHolder<char> szModuleName = new char[MAX_LONGPATH+1];
         if (SUCCEEDED(g_sos->GetMethodDescName(mdesc, mdNameLen, g_mdName, NULL)))
         {
             if (bAssemblyName)
@@ -6685,8 +6720,8 @@ WString MethodNameFromIP(CLRDATA_ADDRESS ip, BOOL bSuppressLines, BOOL bAssembly
             ULONG Index;
             ULONG64 moduleBase;
             if (SUCCEEDED(g_ExtSymbols->GetModuleByOffset(UL64_TO_CDA(addrInModule), 0, &Index, &moduleBase)))
-            {                                    
-                ArrayHolder<char> szModuleName = new char[MAX_LONGPATH+1];
+            {
+                
 
                 if (SUCCEEDED(g_ExtSymbols->GetModuleNames(Index, moduleBase, NULL, 0, NULL, szModuleName, MAX_LONGPATH, NULL, NULL, 0, NULL)))
                 {
@@ -6703,9 +6738,20 @@ WString MethodNameFromIP(CLRDATA_ADDRESS ip, BOOL bSuppressLines, BOOL bAssembly
         }
 
         ArrayHolder<char> szFileName = new char[MAX_LONGPATH+1];
+        DacpModuleData dmd;
+        if (SUCCEEDED(mdescData.Request(g_sos, mdesc))) {
+            if (SUCCEEDED(dmd.Request(g_sos, mdescData.ModulePtr)))
+            {
+                ArrayHolder<WCHAR> wszFileName = new WCHAR[MAX_LONGPATH+1];
+                if (SUCCEEDED(g_sos->GetPEFileName(dmd.File, MAX_LONGPATH, wszFileName, NULL)))
+                {
+                     WideCharToMultiByte(CP_ACP, 0, wszFileName, (int) (_wcslen(wszFileName) + 1), szModuleName, mdNameLen, NULL, NULL);
 
+                }
+            }
+        }
         if (!bSuppressLines &&
-            SUCCEEDED(GetLineByOffset(TO_CDADDR(ip), &linenum, szFileName, MAX_LONGPATH)))
+            SUCCEEDED(GetLineByOffset(TO_CDADDR(ip), szModuleName, &linenum, szFileName, MAX_LONGPATH)))
         {
             int len = MultiByteToWideChar(CP_ACP, 0, szFileName, MAX_LONGPATH, NULL, 0);
             ArrayHolder<WCHAR> wszFileName = new WCHAR[len];
