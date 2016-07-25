@@ -91,11 +91,14 @@ GetDebugInfoFromPDB(MethodDesc* MethodDescPtr, SymbolsInfo** symInfo, unsigned i
 
     ULONG32 numMap;
 
-    if (!getInfoForMethodDelegate)
+    if (getInfoForMethodDelegate == nullptr)
         return E_FAIL;
     
-    if (GetMethodNativeMap(MethodDescPtr, &numMap, &map) != S_OK)
-        return E_FAIL;
+    if (GetMethodNativeMap(MethodDescPtr, &numMap, &map) != S_OK) {
+      printf("\ntest+\n");
+
+      return E_FAIL;
+    }
 
     const Module* mod = MethodDescPtr->GetMethodTable()->GetModule();
     SString modName = mod->GetFile()->GetPath();
@@ -110,13 +113,18 @@ GetDebugInfoFromPDB(MethodDesc* MethodDescPtr, SymbolsInfo** symInfo, unsigned i
         return E_OUTOFMEMORY;
     methodDebugInfo->size = numMap;
 
-    if (!getInfoForMethodDelegate(szModName, MethodDescPtr->GetMemberDef(), *methodDebugInfo))
-        return E_FAIL;
+    if (getInfoForMethodDelegate(szModName, MethodDescPtr->GetMemberDef(), *methodDebugInfo) == S_FALSE) {
+      return E_FAIL;
+    printf("\ntest+0\n");
+
+}
+    printf("\ntest+1\n");
 
     symInfoLen = methodDebugInfo->size;
     *symInfo = new (nothrow) SymbolsInfo[symInfoLen];
     if (*symInfo == nullptr)
         return E_FAIL;
+    printf("\ntest+2\n");
 
     for (ULONG32 i = 0; i < symInfoLen; i++)
     {
@@ -137,6 +145,7 @@ GetDebugInfoFromPDB(MethodDesc* MethodDescPtr, SymbolsInfo** symInfo, unsigned i
             }
         }
     }
+    printf("\ntest+3\n");
 
     CoTaskMemFree(methodDebugInfo->points);
     return S_OK;
@@ -260,9 +269,14 @@ struct __attribute__((packed)) DebugInfo
 void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
 {
     PCODE pCode = MethodDescPtr->GetNativeCode();
+    printf("\ntest start\n");
 
-    if (pCode == NULL)
-        return;
+    if (pCode == NULL) {
+    printf("\ntest 0\n");
+
+      return;
+
+}
     unsigned int symInfoLen = 0;
     NewArrayHolder<SymbolsInfo> symInfo = nullptr;
 
@@ -286,63 +300,82 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
     
     /* Get debug info for method from portable PDB */
     HRESULT hr = GetDebugInfoFromPDB(MethodDescPtr, &symInfo, symInfoLen);
+    printf("\ntest000, hr: %p \n", hr);
     if (FAILED(hr) || symInfoLen == 0)
     {
+        printf("fail to get info for module: %s", szModName);
         return;
     }
-
+    printf("test0001");
+     
     MemBuf elfHeader, sectHeaders, sectStr, dbgInfo, dbgAbbrev, dbgPubname, dbgPubType, dbgLine, dbgStr, elfFile;
+    printf("\ntest1\n");
 
     /* Build .debug_abbrev section */
     if (!BuildDebugAbbrev(dbgAbbrev))
     {
         return;
     }
-    
+     printf("\ntest2\n");
+ 
     /* Build .debug_line section */
     if (!BuildLineTable(dbgLine, pCode, symInfo, symInfoLen))
     {
+   
         return;
     }
     
     DebugStrings[1] = szModuleFile;
     DebugStrings[3] = methodName;
+     printf("\ntest3\n");
     
     /* Build .debug_str section */
     if (!BuildDebugStrings(dbgStr))
     {
+
         return;
     }
+     printf("\ntest4\n");
     
     /* Build .debug_info section */
     if (!BuildDebugInfo(dbgInfo))
     {
+
         return;
     }
+     printf("\ntest5\n");
     
     /* Build .debug_pubname section */
     if (!BuildDebugPub(dbgPubname, methodName, dbgInfo.MemSize, 26))
     {
+
         return;
     }
+     printf("\ntest6\n");
     
     /* Build debug_pubtype section */
     if (!BuildDebugPub(dbgPubType, "int", dbgInfo.MemSize, 37))
     {
+
         return;
     }
     
     /* Build section names section */
     if (!BuildSectionNameTable(sectStr))
     {
+     printf("\ntest7\n");
+
         return;
     }
+     printf("\ntest8\n");
 
     /* Build section headers table */
     if (!BuildSectionTable(sectHeaders))
     {
+
         return;
     }
+     printf("\ntest111111\n");
 
     /* Patch section offsets & sizes */
     long offset = sizeof(Elf_Ehdr);
@@ -382,6 +415,8 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
     /* Build ELF header */
     if (!BuildELFHeader(elfHeader))
     {
+     printf("\ntest10\n");
+
         return;
     }
     Elf_Ehdr* header = reinterpret_cast<Elf_Ehdr*>(elfHeader.MemPtr.GetValue());
@@ -404,6 +439,8 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
     elfFile.MemPtr =  new (nothrow) char[elfFile.MemSize];
     if (elfFile.MemPtr == nullptr)
     {
+     printf("\ntest11\n");
+
         return;
     }
     
@@ -432,6 +469,8 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
     
     if (jit_symbols == nullptr)
     {
+     printf("\ntest12\n");
+
         return;
     }
     
@@ -448,11 +487,13 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
         jit_symbols->next_entry = head;
         head->prev_entry = jit_symbols;
     }
+    printf("\ntest OK\n");
     
     /* Notify the debugger */
     __jit_debug_descriptor.relevant_entry = jit_symbols;
     __jit_debug_descriptor.action_flag = JIT_REGISTER_FN;
     __jit_debug_register_code();
+     
 
 }
 
