@@ -269,6 +269,7 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
 
     /* Get method name & size of jitted code */
     LPCUTF8 methodName = MethodDescPtr->GetName();
+    printf("Method compiled: %s\n", methodName);
     EECodeInfo codeInfo(pCode);
     TADDR codeSize = codeInfo.GetCodeManager()->GetFunctionSize(codeInfo.GetGCInfoToken());
     
@@ -284,7 +285,61 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
     const char *szModulePath, *szModuleFile;
     
     SplitPathname(szModName, szModulePath, szModuleFile);
-    
+
+
+    int length = MultiByteToWideChar(CP_UTF8, 0, szModuleFile, -1, NULL, 0);
+    if (length == 0)
+        return;
+    LPWSTR wszModuleFile = new (nothrow) WCHAR[length];
+    length = MultiByteToWideChar(CP_UTF8, 0, szModuleFile, -1, wszModuleFile, length);
+
+    if (length == 0)
+        return;
+
+    DWORD cCharsNeeded;
+    cCharsNeeded = GetEnvironmentVariableW(W("CORECLR_GDBJIT"), NULL, 0);
+    BOOL isUserDebug = FALSE;
+
+    if ((cCharsNeeded != 0) && (cCharsNeeded < MAX_LONGPATH))
+    {
+        LPWSTR wszModuleNames = new WCHAR[cCharsNeeded];
+        cCharsNeeded = GetEnvironmentVariableW(W("CORECLR_GDBJIT"), wszModuleNames, cCharsNeeded);
+        if (cCharsNeeded != 0)
+        {
+            printf("\nCORECLR_GDBJIT=%S\n", wszModuleNames);
+            LPWSTR wszModuleName = new WCHAR[cCharsNeeded];
+            LPWSTR pComma = wcsstr(wszModuleNames, W(","));
+            LPWSTR tmp = wszModuleNames;
+
+            while (pComma != NULL)
+            {
+                wcsncpy(wszModuleName, tmp, pComma - tmp);
+                wszModuleName[pComma - tmp] = W('\0');
+
+                if (wcscmp(wszModuleName, wszModuleFile) == 0)
+                {
+                    isUserDebug = TRUE;
+                }
+                printf("Module Name = %S\n", wszModuleName);
+                tmp = pComma + 1;
+                pComma = wcsstr(tmp, W(","));
+            }
+            wcsncpy(wszModuleName, tmp, wcslen(tmp));
+            wszModuleName[wcslen(tmp)] = W('\0');
+            printf("Module Name = %S\n", wszModuleName);
+            if (wcscmp(wszModuleName, wszModuleFile) == 0)
+            {
+                isUserDebug = TRUE;
+            }
+            delete [] wszModuleName;
+        }
+        delete[] wszModuleNames;
+    }
+
+    delete []wszModuleFile;
+    if (isUserDebug == FALSE)
+        return;
+
     /* Get debug info for method from portable PDB */
     HRESULT hr = GetDebugInfoFromPDB(MethodDescPtr, &symInfo, symInfoLen);
     if (FAILED(hr) || symInfoLen == 0)
