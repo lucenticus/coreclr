@@ -186,6 +186,9 @@ const char* SectionNames[] = {
 
 const int SectionNamesCount = sizeof(SectionNames) / sizeof(SectionNames[0]);
 
+#ifdef __MACH_O
+//TODO: Add mach-o specific code here
+#else
 /* Static data for section headers */
 struct SectionHeader {
     uint32_t m_type;
@@ -201,6 +204,7 @@ struct SectionHeader {
     {SHT_PROGBITS, 0},
     {SHT_PROGBITS, 0}
 };
+#endif
 
 /* Static data for .debug_str section */
 const char* DebugStrings[] = {
@@ -346,6 +350,9 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
     }
 
     /* Patch section offsets & sizes */
+#ifdef __MACH_O
+//TODO: Add mach-o specific code here
+#else
     long offset = sizeof(Elf_Ehdr);
     Elf_Shdr* pShdr = reinterpret_cast<Elf_Shdr*>(sectHeaders.MemPtr.GetValue());
     ++pShdr; // .text
@@ -427,7 +434,7 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
     memcpy(elfFile.MemPtr + offset, dbgLine.MemPtr, dbgLine.MemSize);
     offset +=  dbgLine.MemSize;
     memcpy(elfFile.MemPtr + offset, sectHeaders.MemPtr, sectHeaders.MemSize);
-
+#endif //__MACH_O
     /* Create GDB JIT structures */
     jit_code_entry* jit_symbols = new (nothrow) jit_code_entry;
     
@@ -438,8 +445,12 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
     
     /* Fill the new entry */
     jit_symbols->next_entry = jit_symbols->prev_entry = 0;
+#ifdef __MACH_O
+    //TODO: Add mach-o specific code here
+#else
     jit_symbols->symfile_addr = elfFile.MemPtr;
     jit_symbols->symfile_size = elfFile.MemSize;
+#endif //__MACH_O
     
     /* Link into list */
     jit_code_entry *head = __jit_debug_descriptor.first_entry;
@@ -469,7 +480,9 @@ void NotifyGdb::MethodDropped(MethodDesc* MethodDescPtr)
     {
         const char* ptr = jit_symbols->symfile_addr;
         uint64_t size = jit_symbols->symfile_size;
-        
+#ifdef __MACH_O
+        //TODO: Add mach-o specific code here
+#else
         const Elf_Ehdr* pEhdr = reinterpret_cast<const Elf_Ehdr*>(ptr);
         const Elf_Shdr* pShdr = reinterpret_cast<const Elf_Shdr*>(ptr + pEhdr->e_shoff);
         ++pShdr; // bump to .text section
@@ -491,7 +504,9 @@ void NotifyGdb::MethodDropped(MethodDesc* MethodDescPtr)
             delete jit_symbols;
             break;
         }
+#endif
     }
+
 }
 
 /* Build the DWARF .debug_line section */
@@ -826,6 +841,9 @@ bool NotifyGdb::BuildSectionNameTable(MemBuf& buf)
 /* Build the ELF section headers table */
 bool NotifyGdb::BuildSectionTable(MemBuf& buf)
 {
+#ifdef __MACH_O
+//TODO: Add mach-o specific code here
+#else
     Elf_Shdr* sectionHeaders = new (nothrow) Elf_Shdr[SectionNamesCount - 1];    
     Elf_Shdr* pSh = sectionHeaders;
 
@@ -866,19 +884,23 @@ bool NotifyGdb::BuildSectionTable(MemBuf& buf)
 
     buf.MemPtr = reinterpret_cast<char*>(sectionHeaders);
     buf.MemSize = sizeof(Elf_Shdr) * (SectionNamesCount - 1);
+#endif
     return true;
 }
 
 /* Build the ELF header */
 bool NotifyGdb::BuildELFHeader(MemBuf& buf)
 {
+#ifdef __MACH_O
+//TODO: Add mach-o specific code here
+#else
     Elf_Ehdr* header = new (nothrow) Elf_Ehdr;
     buf.MemPtr = reinterpret_cast<char*>(header);
     buf.MemSize = sizeof(Elf_Ehdr);
     
     if (header == nullptr)
         return false;
-    
+#endif
     return true;
         
 }
@@ -942,6 +964,9 @@ int NotifyGdb::Leb128Encode(int32_t num, char* buf, int size)
     return i;
 }
 
+#ifdef __MACH_O
+//TODO: Add mach-o specific code here
+#else
 /* ELF 32bit header */
 Elf32_Ehdr::Elf32_Ehdr()
 {
@@ -1001,3 +1026,4 @@ Elf64_Ehdr::Elf64_Ehdr()
     e_phentsize = 0;
     e_phnum = 0;
 }
+#endif

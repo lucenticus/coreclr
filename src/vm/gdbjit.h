@@ -16,8 +16,31 @@
 
 #include <stdint.h>
 #include "method.hpp"
+#if defined(__APPLE__)
+#define __MACH_O
+#include "../inc/llvm/MachO.h"
+#else
+#define __ELF
 #include "../inc/llvm/ELF.h"
+#endif // __APPLE__
+
 #include "../inc/llvm/Dwarf.h"
+
+#ifdef __MACH_O
+
+#if defined(_TARGET_X86_) || defined(_TARGET_ARM_)
+    typedef mach_header  mach_hdr;
+    typedef segment_command  mach_shdr;
+#define ADDRESS_SIZE 4    
+#elif defined(_TARGET_AMD64_) || defined(_TARGET_ARM64_)
+    typedef mach_header_64  mach_hdr;
+    typedef segment_command_64  mach_shdr;
+#define ADDRESS_SIZE 8
+#else
+#error "Target is not supported"
+#endif
+
+#else
 
 #if defined(_TARGET_X86_) || defined(_TARGET_ARM_)
     typedef Elf32_Ehdr  Elf_Ehdr;
@@ -30,6 +53,7 @@
 #else
 #error "Target is not supported"
 #endif
+#endif //__MACH_O
 
 struct __attribute__((packed)) DwarfCompUnit
 {
