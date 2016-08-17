@@ -290,7 +290,7 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
     int length = MultiByteToWideChar(CP_UTF8, 0, szModuleFile, -1, NULL, 0);
     if (length == 0)
         return;
-    LPWSTR wszModuleFile = new (nothrow) WCHAR[length];
+    LPWSTR wszModuleFile = new (nothrow) WCHAR[length+1];
     length = MultiByteToWideChar(CP_UTF8, 0, szModuleFile, -1, wszModuleFile, length);
 
     if (length == 0)
@@ -302,12 +302,12 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
 
     if ((cCharsNeeded != 0) && (cCharsNeeded < MAX_LONGPATH))
     {
-        LPWSTR wszModuleNames = new WCHAR[cCharsNeeded];
+        LPWSTR wszModuleNames = new WCHAR[cCharsNeeded+1];
         cCharsNeeded = GetEnvironmentVariableW(W("CORECLR_GDBJIT"), wszModuleNames, cCharsNeeded);
         if (cCharsNeeded != 0)
         {
             printf("\nCORECLR_GDBJIT=%S\n", wszModuleNames);
-            LPWSTR wszModuleName = new WCHAR[cCharsNeeded];
+            LPWSTR wszModuleName = new WCHAR[cCharsNeeded+1];
             LPWSTR pComma = wcsstr(wszModuleNames, W(","));
             LPWSTR tmp = wszModuleNames;
 
