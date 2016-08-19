@@ -22,10 +22,12 @@
 #if defined(_TARGET_X86_) || defined(_TARGET_ARM_)
     typedef Elf32_Ehdr  Elf_Ehdr;
     typedef Elf32_Shdr  Elf_Shdr;
+    typedef Elf32_Sym   Elf_Sym;
 #define ADDRESS_SIZE 4    
 #elif defined(_TARGET_AMD64_) || defined(_TARGET_ARM64_)
     typedef Elf64_Ehdr  Elf_Ehdr;
     typedef Elf64_Shdr  Elf_Shdr;
+    typedef Elf64_Sym   Elf_Sym;
 #define ADDRESS_SIZE 8    
 #else
 #error "Target is not supported"
@@ -86,6 +88,8 @@ private:
     static bool BuildELFHeader(MemBuf& buf);
     static bool BuildSectionNameTable(MemBuf& buf);
     static bool BuildSectionTable(MemBuf& buf);
+    static bool BuildSymbolTableSection(MemBuf& buf, LPCUTF8 name, PCODE addr);
+    static bool BuildStringTableSection(MemBuf& strTab, LPCUTF8 methodName);
     static bool BuildDebugStrings(MemBuf& buf);
     static bool BuildDebugAbbrev(MemBuf& buf);    
     static bool BuildDebugInfo(MemBuf& buf);

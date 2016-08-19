@@ -181,7 +181,7 @@ struct jit_descriptor __jit_debug_descriptor = { 1, 0, 0, 0 };
 /* Predefined section names */
 const char* SectionNames[] = {
     "", ".text", ".shstrtab", ".debug_str", ".debug_abbrev", ".debug_info",
-    ".debug_pubnames", ".debug_pubtypes", ".debug_line", ""
+    ".debug_pubnames", ".debug_pubtypes", ".debug_line", ".symtab", ".strtab", ""
 };
 
 const int SectionNamesCount = sizeof(SectionNames) / sizeof(SectionNames[0]);
@@ -199,7 +199,9 @@ struct SectionHeader {
     {SHT_PROGBITS, 0},
     {SHT_PROGBITS, 0},
     {SHT_PROGBITS, 0},
-    {SHT_PROGBITS, 0}
+    {SHT_PROGBITS, 0},
+    {SHT_SYMTAB, 0},
+    {SHT_STRTAB, 0},
 };
 
 /* Static data for .debug_str section */
@@ -283,7 +285,7 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
     StackScratchBuffer scratch;
     const char* szModName = modName.GetUTF8(scratch);
     const char *szModulePath, *szModuleFile;
-    
+    printf("Module File: %s\n", szModName);
     SplitPathname(szModName, szModulePath, szModuleFile);
 
 
@@ -347,7 +349,8 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
         return;
     }
 
-    MemBuf elfHeader, sectHeaders, sectStr, dbgInfo, dbgAbbrev, dbgPubname, dbgPubType, dbgLine, dbgStr, elfFile;
+    MemBuf elfHeader, sectHeaders, sectStr, sectSymTab, sectStrTab, dbgInfo, dbgAbbrev, dbgPubname, dbgPubType, dbgLine,
+        dbgStr, elfFile;
 
     /* Build .debug_abbrev section */
     if (!BuildDebugAbbrev(dbgAbbrev))
@@ -387,7 +390,19 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
     {
         return;
     }
-    
+
+    /* Build .symtab section */
+    if (!BuildSymbolTableSection(sectSymTab, methodName, pCode))
+    {
+        return;
+    }
+    /* Build .strtab section */
+    if (!BuildStringTableSection(sectStrTab, methodName))
+    {
+        return;
+    }
+
+
     /* Build section names section */
     if (!BuildSectionNameTable(sectStr))
     {
@@ -434,6 +449,15 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
     pShdr->sh_offset = offset;
     pShdr->sh_size = dbgLine.MemSize;
     offset += dbgLine.MemSize;
+    ++pShdr; // .symtab
+    pShdr->sh_offset = offset;
+    pShdr->sh_size = sectSymTab.MemSize;
+    pShdr->sh_link = 10;
+    offset += sectSymTab.MemSize;
+    ++pShdr; // .strtab
+    pShdr->sh_offset = offset;
+    pShdr->sh_size = sectStrTab.MemSize;
+    offset += sectStrTab.MemSize;
     
     /* Build ELF header */
     if (!BuildELFHeader(elfHeader))
@@ -455,8 +479,9 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
     header->e_shstrndx = 2;
 
     /* Build ELF image in memory */
-    elfFile.MemSize = elfHeader.MemSize + sectStr.MemSize + dbgStr.MemSize + dbgAbbrev.MemSize
-                        + dbgInfo.MemSize + dbgPubname.MemSize + dbgPubType.MemSize + dbgLine.MemSize + sectHeaders.MemSize;
+    elfFile.MemSize = elfHeader.MemSize + sectStr.MemSize + dbgStr.MemSize + dbgAbbrev.MemSize + dbgInfo.MemSize +
+                      dbgPubname.MemSize + dbgPubType.MemSize + dbgLine.MemSize + sectSymTab.MemSize +
+                      sectStrTab.MemSize + sectHeaders.MemSize;
     elfFile.MemPtr =  new (nothrow) char[elfFile.MemSize];
     if (elfFile.MemPtr == nullptr)
     {
@@ -481,7 +506,16 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
     offset +=  dbgPubType.MemSize;
     memcpy(elfFile.MemPtr + offset, dbgLine.MemPtr, dbgLine.MemSize);
     offset +=  dbgLine.MemSize;
+    memcpy(elfFile.MemPtr + offset, sectSymTab.MemPtr, sectSymTab.MemSize);
+    offset +=  sectSymTab.MemSize;
+    memcpy(elfFile.MemPtr + offset, sectStrTab.MemPtr, sectStrTab.MemSize);
+    offset +=  sectStrTab.MemSize;
+
     memcpy(elfFile.MemPtr + offset, sectHeaders.MemPtr, sectHeaders.MemSize);
+
+    FILE *f = fopen("/home/epavlov/test/test.o", "w");
+    fwrite(elfFile.MemPtr, sizeof(char),elfFile.MemSize, f);
+    fclose(f);
 
     /* Create GDB JIT structures */
     jit_code_entry* jit_symbols = new (nothrow) jit_code_entry;
@@ -851,6 +885,48 @@ bool NotifyGdb::BuildDebugPub(MemBuf& buf, const char* name, uint32_t size, uint
     return true;
 }
 
+/* Build ELF .strtab section */
+bool NotifyGdb::BuildStringTableSection(MemBuf& buf, LPCUTF8 methodName)
+{
+    buf.MemSize = strlen(methodName) + 3;
+    buf.MemPtr = new (nothrow) char[buf.MemSize];
+    if (buf.MemPtr == nullptr)
+        return false;
+    buf.MemPtr[0] = 0;
+    strcpy(buf.MemPtr + 1, methodName);
+    buf.MemPtr[buf.MemSize - 2] = 0;
+    buf.MemPtr[buf.MemSize - 1] = 0;
+
+    return true;
+}
+
+/* Build ELF .symtab section */
+bool NotifyGdb::BuildSymbolTableSection(MemBuf& buf, LPCUTF8 name, PCODE addr)
+{
+    buf.MemSize = 2 * sizeof(Elf_Sym);
+    buf.MemPtr = new (nothrow) char[buf.MemSize];
+    if (buf.MemPtr == nullptr)
+        return false;
+
+    Elf_Sym *sym = reinterpret_cast<Elf_Sym*>(buf.MemPtr.GetValue());
+    sym->st_name = 0;
+    sym->st_info = 0;
+    sym->st_other = 0;
+    sym->st_value = 0;
+    sym->st_size = 0;
+    sym->st_shndx = SHN_UNDEF;
+
+    sym = reinterpret_cast<Elf_Sym*>(buf.MemPtr.GetValue() + sizeof(Elf_Sym));
+    sym->st_name = 1;
+    sym->setBindingAndType(STB_GLOBAL, STT_FUNC);
+    sym->st_other = 0;
+    sym->st_value = addr;
+    sym->st_shndx = 10;
+    sym->st_size = 0;
+
+    return true;
+}
+
 /* Build ELF string section */
 bool NotifyGdb::BuildSectionNameTable(MemBuf& buf)
 {
@@ -861,7 +937,7 @@ bool NotifyGdb::BuildSectionNameTable(MemBuf& buf)
     {
         totalLength += strlen(SectionNames[i]) + 1;
     }
-    
+
     buf.MemSize = totalLength;
     buf.MemPtr = new (nothrow) char[totalLength];
     if (buf.MemPtr == nullptr)
@@ -916,7 +992,10 @@ bool NotifyGdb::BuildSectionTable(MemBuf& buf)
         pSh->sh_link = SHN_UNDEF;
         pSh->sh_info = 0;
         pSh->sh_addralign = 1;
-        pSh->sh_entsize = 0;
+        if (strcmp(SectionNames[i], ".symtab") == 0)
+            pSh->sh_entsize = sizeof(Elf_Sym);
+        else
+            pSh->sh_entsize = 0;
     }
 
     buf.MemPtr = reinterpret_cast<char*>(sectionHeaders);
