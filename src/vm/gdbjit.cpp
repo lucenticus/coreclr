@@ -259,6 +259,12 @@ struct __attribute__((packed)) DebugInfo
     3, 0, DW_ATE_signed, 4
 };
 
+/* static data for symbol strings */
+const char* SymbolNames[] = {
+    "", ""
+};
+
+
 /* Create ELF/DWARF debug info for jitted method */
 void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
 {
@@ -271,7 +277,6 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
 
     /* Get method name & size of jitted code */
     LPCUTF8 methodName = MethodDescPtr->GetName();
-    printf("Method compiled: %s\n", methodName);
     EECodeInfo codeInfo(pCode);
     TADDR codeSize = codeInfo.GetCodeManager()->GetFunctionSize(codeInfo.GetGCInfoToken());
     
@@ -285,7 +290,6 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
     StackScratchBuffer scratch;
     const char* szModName = modName.GetUTF8(scratch);
     const char *szModulePath, *szModuleFile;
-    printf("Module File: %s\n", szModName);
     SplitPathname(szModName, szModulePath, szModuleFile);
 
 
@@ -308,7 +312,6 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
         cCharsNeeded = GetEnvironmentVariableW(W("CORECLR_GDBJIT"), wszModuleNames, cCharsNeeded);
         if (cCharsNeeded != 0)
         {
-            printf("\nCORECLR_GDBJIT=%S\n", wszModuleNames);
             LPWSTR wszModuleName = new WCHAR[cCharsNeeded+1];
             LPWSTR pComma = wcsstr(wszModuleNames, W(","));
             LPWSTR tmp = wszModuleNames;
@@ -322,13 +325,11 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
                 {
                     isUserDebug = TRUE;
                 }
-                printf("Module Name = %S\n", wszModuleName);
                 tmp = pComma + 1;
                 pComma = wcsstr(tmp, W(","));
             }
             wcsncpy(wszModuleName, tmp, wcslen(tmp));
             wszModuleName[wcslen(tmp)] = W('\0');
-            printf("Module Name = %S\n", wszModuleName);
             if (wcscmp(wszModuleName, wszModuleFile) == 0)
             {
                 isUserDebug = TRUE;
@@ -337,7 +338,6 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
         }
         delete[] wszModuleNames;
     }
-
     delete []wszModuleFile;
     if (isUserDebug == FALSE)
         return;
@@ -391,13 +391,14 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
         return;
     }
 
-    /* Build .symtab section */
-    if (!BuildSymbolTableSection(sectSymTab, methodName, pCode))
+    /* Build .strtab section */
+    SymbolNames[1] = methodName;
+    if (!BuildStringTableSection(sectStrTab))
     {
         return;
     }
-    /* Build .strtab section */
-    if (!BuildStringTableSection(sectStrTab, methodName))
+    /* Build .symtab section */
+    if (!BuildSymbolTableSection(sectSymTab, pCode, codeSize))
     {
         return;
     }
@@ -513,10 +514,10 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
 
     memcpy(elfFile.MemPtr + offset, sectHeaders.MemPtr, sectHeaders.MemSize);
 
-    FILE *f = fopen("/home/epavlov/test/test.o", "w");
-    fwrite(elfFile.MemPtr, sizeof(char),elfFile.MemSize, f);
-    fclose(f);
-
+#ifdef _DEBUG
+    DumpElf(methodName, elfFile);
+#endif    
+    
     /* Create GDB JIT structures */
     jit_code_entry* jit_symbols = new (nothrow) jit_code_entry;
     
@@ -886,22 +887,30 @@ bool NotifyGdb::BuildDebugPub(MemBuf& buf, const char* name, uint32_t size, uint
 }
 
 /* Build ELF .strtab section */
-bool NotifyGdb::BuildStringTableSection(MemBuf& buf, LPCUTF8 methodName)
+bool NotifyGdb::BuildStringTableSection(MemBuf& buf)
 {
-    buf.MemSize = strlen(methodName) + 3;
+    int len = 0;
+    for (int i = 0; i < sizeof(SymbolNames) / sizeof(SymbolNames[0]); ++i)
+        len += strlen(SymbolNames[i]) + 1;
+    len++; // end table with zero-length string
+    
+    buf.MemSize = len;
     buf.MemPtr = new (nothrow) char[buf.MemSize];
     if (buf.MemPtr == nullptr)
         return false;
-    buf.MemPtr[0] = 0;
-    strcpy(buf.MemPtr + 1, methodName);
-    buf.MemPtr[buf.MemSize - 2] = 0;
-    buf.MemPtr[buf.MemSize - 1] = 0;
-
+    char* ptr = buf.MemPtr;
+    for (int i = 0; i < sizeof(SymbolNames) / sizeof(SymbolNames[0]); ++i)
+    {
+        strcpy(ptr, SymbolNames[i]);
+        ptr += strlen(SymbolNames[i]) + 1;
+    }
+    buf.MemPtr[buf.MemSize-1] = 0;
+    
     return true;
 }
 
 /* Build ELF .symtab section */
-bool NotifyGdb::BuildSymbolTableSection(MemBuf& buf, LPCUTF8 name, PCODE addr)
+bool NotifyGdb::BuildSymbolTableSection(MemBuf& buf, PCODE addr, TADDR codeSize)
 {
     buf.MemSize = 2 * sizeof(Elf_Sym);
     buf.MemPtr = new (nothrow) char[buf.MemSize];
@@ -916,14 +925,18 @@ bool NotifyGdb::BuildSymbolTableSection(MemBuf& buf, LPCUTF8 name, PCODE addr)
     sym->st_size = 0;
     sym->st_shndx = SHN_UNDEF;
 
-    sym = reinterpret_cast<Elf_Sym*>(buf.MemPtr.GetValue() + sizeof(Elf_Sym));
+    sym++;
+    //sym = reinterpret_cast<Elf_Sym*>(buf.MemPtr.GetValue() + sizeof(Elf_Sym));
     sym->st_name = 1;
     sym->setBindingAndType(STB_GLOBAL, STT_FUNC);
     sym->st_other = 0;
-    sym->st_value = addr;
-    sym->st_shndx = 10;
-    sym->st_size = 0;
-
+#ifdef _TARGET_ARM_
+    sym->st_value = 1; // for THUMB code
+#else    
+    sym->st_value = 0;
+#endif    
+    sym->st_shndx = 1; // .text section index
+    sym->st_size = codeSize;
     return true;
 }
 
@@ -1075,6 +1088,19 @@ int NotifyGdb::Leb128Encode(int32_t num, char* buf, int size)
     
     return i;
 }
+
+#ifdef _DEBUG
+void NotifyGdb::DumpElf(const char* methodName, const MemBuf& elfFile)
+{
+    char dump[1024];
+    strcpy(dump, "./");
+    strcat(dump, methodName);
+    strcat(dump, ".o");
+    FILE *f = fopen(dump,  "wb");
+    fwrite(elfFile.MemPtr, sizeof(char),elfFile.MemSize, f);
+    fclose(f);
+}
+#endif
 
 /* ELF 32bit header */
 Elf32_Ehdr::Elf32_Ehdr()

@@ -88,8 +88,8 @@ private:
     static bool BuildELFHeader(MemBuf& buf);
     static bool BuildSectionNameTable(MemBuf& buf);
     static bool BuildSectionTable(MemBuf& buf);
-    static bool BuildSymbolTableSection(MemBuf& buf, LPCUTF8 name, PCODE addr);
-    static bool BuildStringTableSection(MemBuf& strTab, LPCUTF8 methodName);
+    static bool BuildSymbolTableSection(MemBuf& buf, PCODE addr, TADDR codeSize);
+    static bool BuildStringTableSection(MemBuf& strTab);
     static bool BuildDebugStrings(MemBuf& buf);
     static bool BuildDebugAbbrev(MemBuf& buf);    
     static bool BuildDebugInfo(MemBuf& buf);
@@ -106,6 +106,9 @@ private:
     static void SplitPathname(const char* path, const char*& pathName, const char*& fileName);
     static int Leb128Encode(uint32_t num, char* buf, int size);
     static int Leb128Encode(int32_t num, char* buf, int size);
+#ifdef _DEBUG
+    static void DumpElf(const char* methodName, const MemBuf& buf);
+#endif
 };
 
 #endif // #ifndef __GDBJIT_H__
