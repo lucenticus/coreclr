@@ -180,7 +180,7 @@ struct jit_descriptor __jit_debug_descriptor = { 1, 0, 0, 0 };
 
 #ifdef __MACH_O
 const char* SectionNames[] = {
-     "__text", "__debug_str", "__debug_abbrev", "__debug_info",
+    "__text", "__debug_str", "__debug_abbrev", "__debug_info",
     "__debug_pubnames", "__debug_pubtypes", "__debug_line", ""
 };
 #else
@@ -370,14 +370,16 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
     mach_shdr *msh = reinterpret_cast<mach_shdr*>(segComHeader.MemPtr.GetValue());
     msh->vmaddr = pCode;
     msh->vmsize = 4096;
-
+    mach_hdr *mh = reinterpret_cast<mach_hdr*>(binHeader.MemPtr.GetValue());
+    mh->sizeofcmds = sizeof(mach_shdr) + sizeof(section_header) * msh->nsects;
+    
     long offset = sizeof(mach_hdr) + segComHeader.MemSize + sectHeaders.MemSize;
     section_header* pShdr = reinterpret_cast<section_header*>(sectHeaders.MemPtr.GetValue());
     pShdr->addr = pCode;
     pShdr->size = codeSize;
     ++pShdr; // .debug_str
     pShdr->addr = pCode + codeSize;
-    pShdr->offset = offset + codeSize;
+    pShdr->offset = offset;
     pShdr->size = dbgStr.MemSize;
     offset += dbgStr.MemSize;
     ++pShdr; // .debug_abbrev
