@@ -29,12 +29,14 @@
 #ifdef __MACH_O
 
 #if defined(_TARGET_X86_) || defined(_TARGET_ARM_)
-    typedef mach_header  mach_hdr;
-    typedef segment_command  mach_shdr;
+    typedef mach_header mach_hdr;
+    typedef segment_command mach_shdr;
+    typedef section section_header;
 #define ADDRESS_SIZE 4    
 #elif defined(_TARGET_AMD64_) || defined(_TARGET_ARM64_)
-    typedef mach_header_64  mach_hdr;
-    typedef segment_command_64  mach_shdr;
+    typedef mach_header_64 mach_hdr;
+    typedef segment_command_64 mach_shdr;
+    typedef section_64 section_header;
 #define ADDRESS_SIZE 8
 #else
 #error "Target is not supported"
@@ -107,7 +109,12 @@ private:
         {}
     };
 
+#ifdef __MACH_O
+    static bool BuildMachOHeader(MemBuf& buf);
+    static bool BuildSegmentCommand(MemBuf& buf);
+#else
     static bool BuildELFHeader(MemBuf& buf);
+#endif
     static bool BuildSectionNameTable(MemBuf& buf);
     static bool BuildSectionTable(MemBuf& buf);
     static bool BuildDebugStrings(MemBuf& buf);

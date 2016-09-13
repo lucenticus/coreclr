@@ -178,12 +178,18 @@ struct jit_descriptor __jit_debug_descriptor = { 1, 0, 0, 0 };
 
 // END of GDB JIT interface
 
+#ifdef __MACH_O
+const char* SectionNames[] = {
+     "__text", "__debug_str", "__debug_abbrev", "__debug_info",
+    "__debug_pubnames", "__debug_pubtypes", "__debug_line", ""
+};
+#else
 /* Predefined section names */
 const char* SectionNames[] = {
     "", ".text", ".shstrtab", ".debug_str", ".debug_abbrev", ".debug_info",
     ".debug_pubnames", ".debug_pubtypes", ".debug_line", ""
 };
-
+#endif
 const int SectionNamesCount = sizeof(SectionNames) / sizeof(SectionNames[0]);
 
 #ifdef __MACH_O
@@ -296,7 +302,7 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
         return;
     }
 
-    MemBuf elfHeader, sectHeaders, sectStr, dbgInfo, dbgAbbrev, dbgPubname, dbgPubType, dbgLine, dbgStr, elfFile;
+    MemBuf binHeader, sectHeaders, segComHeader, sectionText, sectStr, dbgInfo, dbgAbbrev, dbgPubname, dbgPubType, dbgLine, dbgStr, binFile;
 
     /* Build .debug_abbrev section */
     if (!BuildDebugAbbrev(dbgAbbrev))
@@ -351,7 +357,88 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
 
     /* Patch section offsets & sizes */
 #ifdef __MACH_O
-//TODO: Add mach-o specific code here
+    /* Build MachO header */
+    if (!BuildMachOHeader(binHeader))
+    {
+        return;
+    }
+    /* Build segment command header */
+    if (!BuildSegmentCommand(segComHeader))
+    {
+        return;
+    }
+    mach_shdr *msh = reinterpret_cast<mach_shdr*>(segComHeader.MemPtr.GetValue());
+    msh->vmaddr = pCode;
+    msh->vmsize = 4096;
+
+    long offset = sizeof(mach_hdr) + segComHeader.MemSize + sectHeaders.MemSize;
+    section_header* pShdr = reinterpret_cast<section_header*>(sectHeaders.MemPtr.GetValue());
+    pShdr->addr = pCode;
+    pShdr->size = codeSize;
+    ++pShdr; // .debug_str
+    pShdr->addr = pCode + codeSize;
+    pShdr->offset = offset + codeSize;
+    pShdr->size = dbgStr.MemSize;
+    offset += dbgStr.MemSize;
+    ++pShdr; // .debug_abbrev
+    pShdr->addr = pCode + offset;
+    pShdr->offset = offset;
+    pShdr->size = dbgAbbrev.MemSize;
+    offset += dbgAbbrev.MemSize;
+    ++pShdr; // .debug_info
+    pShdr->addr = pCode + offset;
+    pShdr->offset = offset;
+    pShdr->size = dbgInfo.MemSize;
+    offset += dbgInfo.MemSize;
+    ++pShdr; // .debug_pubnames
+    pShdr->addr = pCode + offset;
+    pShdr->offset = offset;
+    pShdr->size = dbgPubname.MemSize;
+    offset += dbgPubname.MemSize;
+    ++pShdr; // .debug_pubtypes
+    pShdr->addr = pCode + offset;
+    pShdr->offset = offset;
+    pShdr->size = dbgPubType.MemSize;
+    offset += dbgPubType.MemSize;
+    ++pShdr; // .debug_line
+    pShdr->addr = pCode + offset;
+    pShdr->offset = offset;
+    pShdr->size = dbgLine.MemSize;
+    offset += dbgLine.MemSize;
+
+    /* Build MachO image in memory */
+    binFile.MemSize = binHeader.MemSize + segComHeader.MemSize + sectHeaders.MemSize + dbgStr.MemSize + dbgAbbrev.MemSize
+                      + dbgInfo.MemSize + dbgPubname.MemSize + dbgPubType.MemSize + dbgLine.MemSize;
+    binFile.MemPtr =  new (nothrow) char[binFile.MemSize];
+    if (binFile.MemPtr == nullptr)
+    {
+        return;
+    }
+    
+    /* Copy section data */
+    offset = 0;
+    memcpy(binFile.MemPtr, binHeader.MemPtr, binHeader.MemSize);
+    offset += binHeader.MemSize;
+    memcpy(binFile.MemPtr + offset, segComHeader.MemPtr, segComHeader.MemSize);
+    offset += segComHeader.MemSize;
+    memcpy(binFile.MemPtr + offset, sectHeaders.MemPtr, sectHeaders.MemSize);
+    offset += sectHeaders.MemSize;
+    memcpy(binFile.MemPtr + offset, dbgStr.MemPtr, dbgStr.MemSize);
+    offset +=  dbgStr.MemSize;
+    memcpy(binFile.MemPtr + offset, dbgAbbrev.MemPtr, dbgAbbrev.MemSize);
+    offset +=  dbgAbbrev.MemSize;
+    memcpy(binFile.MemPtr + offset, dbgInfo.MemPtr, dbgInfo.MemSize);
+    offset +=  dbgInfo.MemSize;
+    memcpy(binFile.MemPtr + offset, dbgPubname.MemPtr, dbgPubname.MemSize);
+    offset +=  dbgPubname.MemSize;
+    memcpy(binFile.MemPtr + offset, dbgPubType.MemPtr, dbgPubType.MemSize);
+    offset +=  dbgPubType.MemSize;
+    memcpy(binFile.MemPtr + offset, dbgLine.MemPtr, dbgLine.MemSize);
+
+    FILE *f = fopen("test-macho.o","w");
+    fwrite(binFile.MemPtr, sizeof(char), binFile.MemSize, f);
+    fclose(f);
+
 #else
     long offset = sizeof(Elf_Ehdr);
     Elf_Shdr* pShdr = reinterpret_cast<Elf_Shdr*>(sectHeaders.MemPtr.GetValue());
@@ -386,13 +473,14 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
     pShdr->sh_offset = offset;
     pShdr->sh_size = dbgLine.MemSize;
     offset += dbgLine.MemSize;
-    
+
     /* Build ELF header */
-    if (!BuildELFHeader(elfHeader))
+    if (!BuildELFHeader(binHeader))
     {
         return;
     }
-    Elf_Ehdr* header = reinterpret_cast<Elf_Ehdr*>(elfHeader.MemPtr.GetValue());
+
+    Elf_Ehdr* header = reinterpret_cast<Elf_Ehdr*>(binHeader.MemPtr.GetValue());
 #ifdef _TARGET_ARM_
     header->e_flags = EF_ARM_EABI_VER5;
 #ifdef ARM_SOFTFP
@@ -407,34 +495,36 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
     header->e_shstrndx = 2;
 
     /* Build ELF image in memory */
-    elfFile.MemSize = elfHeader.MemSize + sectStr.MemSize + dbgStr.MemSize + dbgAbbrev.MemSize
+    binFile.MemSize = binHeader.MemSize + sectStr.MemSize + dbgStr.MemSize + dbgAbbrev.MemSize
                         + dbgInfo.MemSize + dbgPubname.MemSize + dbgPubType.MemSize + dbgLine.MemSize + sectHeaders.MemSize;
-    elfFile.MemPtr =  new (nothrow) char[elfFile.MemSize];
-    if (elfFile.MemPtr == nullptr)
+    binFile.MemPtr =  new (nothrow) char[binFile.MemSize];
+    if (binFile.MemPtr == nullptr)
     {
         return;
     }
     
     /* Copy section data */
     offset = 0;
-    memcpy(elfFile.MemPtr, elfHeader.MemPtr, elfHeader.MemSize);
-    offset += elfHeader.MemSize;
-    memcpy(elfFile.MemPtr + offset, sectStr.MemPtr, sectStr.MemSize);
+    memcpy(binFile.MemPtr, binHeader.MemPtr, binHeader.MemSize);
+    offset += binHeader.MemSize;
+    memcpy(binFile.MemPtr + offset, sectStr.MemPtr, sectStr.MemSize);
     offset +=  sectStr.MemSize;
-    memcpy(elfFile.MemPtr + offset, dbgStr.MemPtr, dbgStr.MemSize);
+    memcpy(binFile.MemPtr + offset, dbgStr.MemPtr, dbgStr.MemSize);
     offset +=  dbgStr.MemSize;
-    memcpy(elfFile.MemPtr + offset, dbgAbbrev.MemPtr, dbgAbbrev.MemSize);
+    memcpy(binFile.MemPtr + offset, dbgAbbrev.MemPtr, dbgAbbrev.MemSize);
     offset +=  dbgAbbrev.MemSize;
-    memcpy(elfFile.MemPtr + offset, dbgInfo.MemPtr, dbgInfo.MemSize);
+    memcpy(binFile.MemPtr + offset, dbgInfo.MemPtr, dbgInfo.MemSize);
     offset +=  dbgInfo.MemSize;
-    memcpy(elfFile.MemPtr + offset, dbgPubname.MemPtr, dbgPubname.MemSize);
+    memcpy(binFile.MemPtr + offset, dbgPubname.MemPtr, dbgPubname.MemSize);
     offset +=  dbgPubname.MemSize;
-    memcpy(elfFile.MemPtr + offset, dbgPubType.MemPtr, dbgPubType.MemSize);
+    memcpy(binFile.MemPtr + offset, dbgPubType.MemPtr, dbgPubType.MemSize);
     offset +=  dbgPubType.MemSize;
-    memcpy(elfFile.MemPtr + offset, dbgLine.MemPtr, dbgLine.MemSize);
+    memcpy(binFile.MemPtr + offset, dbgLine.MemPtr, dbgLine.MemSize);
     offset +=  dbgLine.MemSize;
-    memcpy(elfFile.MemPtr + offset, sectHeaders.MemPtr, sectHeaders.MemSize);
+    memcpy(binFile.MemPtr + offset, sectHeaders.MemPtr, sectHeaders.MemSize);
+
 #endif //__MACH_O
+
     /* Create GDB JIT structures */
     jit_code_entry* jit_symbols = new (nothrow) jit_code_entry;
     
@@ -445,13 +535,9 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
     
     /* Fill the new entry */
     jit_symbols->next_entry = jit_symbols->prev_entry = 0;
-#ifdef __MACH_O
-    //TODO: Add mach-o specific code here
-#else
-    jit_symbols->symfile_addr = elfFile.MemPtr;
-    jit_symbols->symfile_size = elfFile.MemSize;
-#endif //__MACH_O
-    
+    jit_symbols->symfile_addr = binFile.MemPtr;
+    jit_symbols->symfile_size = binFile.MemSize;
+
     /* Link into list */
     jit_code_entry *head = __jit_debug_descriptor.first_entry;
     __jit_debug_descriptor.first_entry = jit_symbols;
@@ -842,7 +928,47 @@ bool NotifyGdb::BuildSectionNameTable(MemBuf& buf)
 bool NotifyGdb::BuildSectionTable(MemBuf& buf)
 {
 #ifdef __MACH_O
-//TODO: Add mach-o specific code here
+    section_header* sectionHeaders = new (nothrow) section_header[SectionNamesCount - 1];
+    section_header* pSh = sectionHeaders;
+
+    if (sectionHeaders == nullptr)
+    {
+        return false;
+    }
+
+
+    /* fill section header data */
+    for (int i = 0; i < SectionNamesCount - 1; ++i, ++pSh)
+    {
+        strcpy(pSh->sectname, SectionNames[i]);
+        if (i == 0)
+        {
+            strcpy(pSh->segname, "__TEXT");
+            pSh->flags = S_REGULAR | S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
+            pSh->align = 4;
+        }
+        else
+        {
+            strcpy(pSh->segname, "__DWARF");
+            pSh->flags = S_REGULAR | S_ATTR_DEBUG;
+            pSh->align = 0;
+        }
+        pSh->addr = 0;
+        pSh->size = 0;
+        pSh->offset = 0;
+        pSh->reloff = 0;
+        pSh->nreloc = 0;
+
+        pSh->reserved1 = pSh->reserved2 = 0;
+    #if defined(_TARGET_AMD64_) || defined(_TARGET_ARM64_)
+        pSh->reserved3 = 0;
+    #endif
+    }
+
+    buf.MemPtr = reinterpret_cast<char*>(sectionHeaders);
+    buf.MemSize = sizeof(section_header) * (SectionNamesCount - 1);
+    return true;
+
 #else
     Elf_Shdr* sectionHeaders = new (nothrow) Elf_Shdr[SectionNamesCount - 1];    
     Elf_Shdr* pSh = sectionHeaders;
@@ -888,22 +1014,88 @@ bool NotifyGdb::BuildSectionTable(MemBuf& buf)
     return true;
 }
 
+#ifdef __MACH_O
+bool NotifyGdb::BuildMachOHeader(MemBuf& buf)
+{
+    mach_hdr* header = new (nothrow) mach_hdr;
+    if (header == nullptr)
+        return false;
+#if defined(_TARGET_X86_) || defined(_TARGET_ARM_)
+    header->magic = MH_MAGIC;
+#if defined(_TARGET_X86_)
+    header->cputype = CPU_TYPE_X86;
+    header->cpusubtype = CPU_SUBTYPE_X86_ALL;
+#else
+    header->cputype = CPU_TYPE_ARM;
+    header->cpusubtype = CPU_SUBTYPE_ARM_ALL;
+#endif // _TARGET_X86_
+
+#elif defined(_TARGET_AMD64_) || defined(_TARGET_ARM64_)
+    header->magic = MH_MAGIC_64;
+    header->reserved = 0;
+#if defined(_TARGET_AMD64_)
+    header->cputype = CPU_TYPE_X86_64;
+    header->cpusubtype = CPU_SUBTYPE_LIB64 | CPU_SUBTYPE_X86_64_ALL;
+#else
+    header->cputype = CPU_TYPE_ARM64;
+    header->cpusubtype = CPU_SUBTYPE_LIB64 | CPU_SUBTYPE_ARM64_ALL;
+#endif // _TARGET_AMD64_
+
+#else
+#error "Target is not supported"
+#endif
+
+    header->filetype = MH_OBJECT;
+    header->ncmds = 1;
+    header->sizeofcmds = sizeof(mach_shdr);
+    header->flags = 0;
+
+    buf.MemPtr = reinterpret_cast<char*>(header);
+    buf.MemSize = sizeof(mach_hdr);
+    return true;
+}
+
+bool NotifyGdb::BuildSegmentCommand(MemBuf& buf) {
+    mach_shdr*  sc = new (nothrow) mach_shdr;
+    if (sc == nullptr)
+        return false;
+#if defined(_TARGET_X86_) || defined(_TARGET_ARM_)
+    sc->cmd = LC_SEGMENT_32;
+
+#elif defined(_TARGET_AMD64_) || defined(_TARGET_ARM64_)
+    sc->cmd = LC_SEGMENT_64;
+#else
+#error "Target is not supported"
+#endif
+    sc->vmaddr = 0;
+    sc->vmsize = 0;  // FIXME: set correct code size
+    sc->fileoff = 0;
+    sc->filesize = 0;
+    sc->maxprot = 0;
+    sc->initprot = 0;
+    sc->flags = 0;
+    sc->nsects = SectionNamesCount - 1;
+    memset(sc->segname, 0, 16);
+    sc->cmdsize = sizeof(mach_shdr) + sizeof(section_header) * sc->nsects;
+    buf.MemPtr = reinterpret_cast<char*>(sc);
+    buf.MemSize = sizeof(mach_shdr);
+    return true;
+}
+#else
+
 /* Build the ELF header */
 bool NotifyGdb::BuildELFHeader(MemBuf& buf)
 {
-#ifdef __MACH_O
-//TODO: Add mach-o specific code here
-#else
     Elf_Ehdr* header = new (nothrow) Elf_Ehdr;
     buf.MemPtr = reinterpret_cast<char*>(header);
     buf.MemSize = sizeof(Elf_Ehdr);
     
     if (header == nullptr)
         return false;
-#endif
     return true;
-        
 }
+#endif
+
 
 /* Split full path name into directory & file anmes */
 void NotifyGdb::SplitPathname(const char* path, const char*& pathName, const char*& fileName)
