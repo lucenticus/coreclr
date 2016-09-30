@@ -55,11 +55,11 @@ void GetTypeInfoFromSignature(PCCOR_SIGNATURE typePtr,
                 typeEncoding = DW_ATE_signed;
                 break;
             case ELEMENT_TYPE_I1:
-                *typeStr = "int8";
+                *typeStr = "sbyte";
                 typeEncoding = DW_ATE_signed;
                 break;
             case ELEMENT_TYPE_U1:
-                *typeStr = "uint8";
+                *typeStr = "byte";
                 typeEncoding = DW_ATE_unsigned;
                 break;
             case ELEMENT_TYPE_I2:
@@ -548,10 +548,18 @@ struct __attribute__((packed)) DebugInfoCU
     uint8_t m_cu_abbrev;
     uint32_t m_prod_off;
     uint16_t m_lang;
-    uint32_t m_cu_name;
+     uint32_t m_cu_name;
     uint32_t m_line_num;
 } debugInfoCU = {
     1, 0, DW_LANG_C89, 0, 0
+};
+
+struct __attribute__((packed)) DebugInfoTypedef
+{
+    uint8_t m_typedef_abbrev;
+    uint32_t m_typedef_name;
+    uint8_t m_typedef_file, m_typedef_line;
+    uint32_t m_typedef_type;
 };
 
 struct __attribute__((packed)) DebugInfoSub
@@ -921,9 +929,9 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
 
     elfFile.MemPtr.SuppressRelease();
 
-#ifdef GDBJIT_DUMPELF
+    //#ifdef GDBJIT_DUMPELF
     DumpElf(methodName, elfFile);
-#endif
+    //#endif
 
     /* Create GDB JIT structures */
     jit_code_entry* jit_symbols = new (nothrow) jit_code_entry;
@@ -1296,8 +1304,41 @@ bool NotifyGdb::BuildDebugInfo(MemBuf& buf, NewArrayHolder<ArgsDebugInfo> &argsD
                                NewArrayHolder<LocalsDebugInfo> &localsDebug, unsigned int localsDebugSize)
 {
 
+
+    int typedefSize = 0;
+    bool hasByte = false, hasSbyte = false;
+    for (int i = 0; i < argsDebugSize; i++)
+    {
+        if (strcmp(argsDebug[i].m_type_name, "sbyte") == 0 && hasSbyte == false)
+        {
+            hasSbyte = true;
+            typedefSize++;
+            continue;
+        }
+        if (strcmp(argsDebug[i].m_type_name, "byte") == 0 && hasByte == false)
+        {
+            hasByte = true;
+            typedefSize++;
+        }
+    }
+    for (int i = 0; i < localsDebugSize; i++)
+    {
+        if (strcmp(localsDebug[i].m_type_name, "sbyte") == 0 && hasSbyte == false)
+        {
+            hasSbyte = true;
+            typedefSize++;
+            continue;
+        }
+        if (strcmp(localsDebug[i].m_type_name, "byte") == 0 && hasByte == false)
+        {
+            hasByte = true;
+            typedefSize++;
+        }
+    }
+
     buf.MemSize = sizeof(DwarfCompUnit) + sizeof(DebugInfoCU) + sizeof(DebugInfoSub) + sizeof(DebugInfoType) +
-      (sizeof(DebugInfoVar) + sizeof(DebugInfoType)) * (localsDebugSize + argsDebugSize) + 2;
+                  (sizeof(DebugInfoVar) + sizeof(DebugInfoType)) * (localsDebugSize + argsDebugSize) +
+                  sizeof(DebugInfoTypedef) * typedefSize + 2;
     buf.MemPtr = new (nothrow) char[buf.MemSize];
 
     if (buf.MemPtr == nullptr)
@@ -1325,7 +1366,6 @@ bool NotifyGdb::BuildDebugInfo(MemBuf& buf, NewArrayHolder<ArgsDebugInfo> &argsD
     DebugInfoType* bufType = new (nothrow) DebugInfoType[localsDebugSize + argsDebugSize];
     if (bufType == nullptr)
         return false;
-    // TODO: args
     for (int i = 0; i < argsDebugSize; i++)
     {
         bufType[i].m_type_abbrev = 2;
@@ -1345,13 +1385,79 @@ bool NotifyGdb::BuildDebugInfo(MemBuf& buf, NewArrayHolder<ArgsDebugInfo> &argsD
     }
     memcpy(buf.MemPtr + offset, bufType, sizeof(DebugInfoType) * (localsDebugSize + argsDebugSize));
     offset += sizeof(DebugInfoType) * (localsDebugSize + argsDebugSize);
+    //delete []bufType;
+
+    int byteTypeOffset = 0, sbyteTypeOffset = 0;
+    int byteNameOffset = 0, sbyteNameOffset = 0;
+
+    if (typedefSize > 0)
+    {
+        for (int i = 0; i < argsDebugSize; i++)
+        {
+            if (strcmp(argsDebug[i].m_type_name, "sbyte") == 0 && sbyteTypeOffset == 0)
+            {
+                sbyteTypeOffset = argsDebug[i].m_type_offset;
+                sbyteNameOffset = argsDebug[i].m_type_name_offset;
+                continue;
+            }
+            if (strcmp(argsDebug[i].m_type_name, "byte") == 0 && byteTypeOffset == 0)
+            {
+                byteTypeOffset = argsDebug[i].m_type_offset;
+                byteNameOffset = argsDebug[i].m_type_name_offset;
+            }
+        }
+        for (int i = 0; i < localsDebugSize; i++)
+        {
+            if (strcmp(localsDebug[i].m_type_name, "sbyte") == 0 && sbyteTypeOffset == 0)
+            {
+                sbyteTypeOffset = localsDebug[i].m_type_offset;
+                sbyteNameOffset = localsDebug[i].m_type_name_offset;
+                continue;
+            }
+            if (strcmp(localsDebug[i].m_type_name, "byte") == 0 && byteTypeOffset == 0)
+            {
+                byteTypeOffset = localsDebug[i].m_type_offset;
+                byteNameOffset = localsDebug[i].m_type_name_offset;
+            }
+        }
+        DebugInfoTypedef* typeDef = new (nothrow) DebugInfoTypedef[typedefSize];
+        if (typeDef == nullptr)
+            return false;
+
+        int j = 0;
+        if (byteTypeOffset != 0)
+        {
+            typeDef[j].m_typedef_abbrev = 3;
+            typeDef[j].m_typedef_file = 1;
+            typeDef[j].m_typedef_line = 1;
+            typeDef[j].m_typedef_type = byteTypeOffset;
+            typeDef[j].m_typedef_name = byteNameOffset;
+            byteTypeOffset = offset + j * sizeof(DebugInfoTypedef);
+            j++;
+        }
+
+        if (sbyteTypeOffset != 0)
+        {
+            typeDef[j].m_typedef_abbrev = 3;
+            typeDef[j].m_typedef_file = 1;
+            typeDef[j].m_typedef_line = 1;
+            typeDef[j].m_typedef_type = sbyteTypeOffset;
+            typeDef[j].m_typedef_name = sbyteNameOffset;
+            sbyteTypeOffset = offset + j * sizeof(DebugInfoTypedef);
+            j++;
+        }
+
+        memcpy(buf.MemPtr + offset, typeDef, sizeof(DebugInfoTypedef) * typedefSize);
+        offset += sizeof(DebugInfoTypedef) * typedefSize;
+    }
 
     /* copy debug information */
     DebugInfoSub* diSub = reinterpret_cast<DebugInfoSub*>(buf.MemPtr + offset);
     memcpy(buf.MemPtr + offset, &debugInfoSub, sizeof(DebugInfoSub));
     diSub->m_sub_name = strlen(DebugStrings[0]) + 1 + strlen(DebugStrings[1]) + 1 + strlen(DebugStrings[2]) + 1;
     offset += sizeof(DebugInfoSub);
-    DebugInfoVar* bufVar = new (nothrow) DebugInfoVar[localsDebugSize + argsDebugSize];
+
+    NewArrayHolder<DebugInfoVar> bufVar = new (nothrow) DebugInfoVar[localsDebugSize + argsDebugSize];
     if (bufVar == nullptr)
         return false;
 
@@ -1361,7 +1467,12 @@ bool NotifyGdb::BuildDebugInfo(MemBuf& buf, NewArrayHolder<ArgsDebugInfo> &argsD
         bufVar[i].m_var_name = argsDebug[i].m_arg_name_offset;
         bufVar[i].m_var_file = 1;
         bufVar[i].m_var_line = 1;
-        bufVar[i].m_var_type = argsDebug[i].m_type_offset;
+        if (strcmp(argsDebug[i].m_type_name, "sbyte") == 0)
+            bufVar[i].m_var_type = sbyteTypeOffset;
+        else if (strcmp(argsDebug[i].m_type_name, "byte") == 0)
+            bufVar[i].m_var_type = byteTypeOffset;
+        else
+            bufVar[i].m_var_type = argsDebug[i].m_type_offset;
         char cnv_buf[2];
         int len = Leb128Encode(static_cast<uint32_t>(argsDebug[i].m_native_offset), cnv_buf, sizeof(cnv_buf));
         bufVar[i].m_var_loc[0] = 2;
@@ -1375,7 +1486,13 @@ bool NotifyGdb::BuildDebugInfo(MemBuf& buf, NewArrayHolder<ArgsDebugInfo> &argsD
         bufVar[i].m_var_name = localsDebug[i-argsDebugSize].m_var_name_offset;
         bufVar[i].m_var_file = 1;
         bufVar[i].m_var_line = 1;
-        bufVar[i].m_var_type = localsDebug[i-argsDebugSize].m_type_offset;
+        if (strcmp(localsDebug[i-argsDebugSize].m_type_name, "sbyte") == 0)
+            bufVar[i].m_var_type = sbyteTypeOffset;
+        else if (strcmp(localsDebug[i-argsDebugSize].m_type_name, "byte") == 0)
+            bufVar[i].m_var_type = byteTypeOffset;
+        else
+            bufVar[i].m_var_type = localsDebug[i-argsDebugSize].m_type_offset;
+
         char cnv_buf[2];
         int len = Leb128Encode(
             static_cast<uint32_t>(localsDebug[i - argsDebugSize].m_native_offset), cnv_buf, sizeof(cnv_buf));
@@ -1384,6 +1501,7 @@ bool NotifyGdb::BuildDebugInfo(MemBuf& buf, NewArrayHolder<ArgsDebugInfo> &argsD
         bufVar[i].m_var_loc[2] = cnv_buf[0];
     }
     memcpy(buf.MemPtr + offset, bufVar, sizeof(DebugInfoVar) * (localsDebugSize + argsDebugSize));
+    //delete[] bufVar;
 
     /* zero end marker */
     buf.MemPtr[buf.MemSize-2] = 0;
