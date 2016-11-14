@@ -804,6 +804,10 @@ public:
 
     void Set(FunctionMember** value, int cElements)
     {
+        for (int i = 0; i < m_cElements; i++)
+        {
+            delete this->m_value[i];
+        }
         NewArrayHolder<FunctionMember*>::operator=(value);
         m_cElements = cElements;
     }
@@ -1409,10 +1413,19 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
     }
 
     int method_count = countFuncs(symInfo, symInfoLen);
-    method.Set(new (nothrow) FunctionMember*[method_count], method_count);
-    if (method == nullptr) {
+    FunctionMember** fm = new (nothrow) FunctionMember*[method_count];
+    if (fm == nullptr)
+    {
         return;
     }
+
+    for (int i = 0; i < method_count; i++)
+    {
+        fm[i] = nullptr;
+    }
+
+    method.Set(fm, method_count);
+
 
     CodeHeader* pCH = ((CodeHeader*)(pCode & ~1)) - 1;
     CalledMethod* pCalledMethods = reinterpret_cast<CalledMethod*>(pCH->GetCalledMethods());
