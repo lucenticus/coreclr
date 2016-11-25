@@ -90,6 +90,11 @@ GetTypeInfoFromTypeHandle(TypeHandle typeHandle, NotifyGdb::PTK_TypeInfoMap pTyp
             //
             FieldDesc *pField;
 
+            if (pMT->IsCanonicalMethodTable())
+            {
+
+                //ASSERT(0);
+            };
             for (ULONG i = 0; i < cFields; i++)
             {
                 pField = fieldDescIterator.Next();
@@ -1321,6 +1326,7 @@ int SymbolCount = 0;
 NewArrayHolder<Elf_Symbol> SymbolNames;
 NotifyGdb::AddrSet codeAddrs;
 
+
 /* Create ELF/DWARF debug info for jitted method */
 void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
 {
@@ -1334,8 +1340,28 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
     /* Get method name & size of jitted code */
     LPCUTF8 methodName = MethodDescPtr->GetName();
     EECodeInfo codeInfo(pCode);
+    codeInfo.Init(pCode);
     TADDR codeSize = codeInfo.GetCodeManager()->GetFunctionSize(codeInfo.GetGCInfoToken());
-    
+    //MethodDescPtr
+     Thread *pThread;
+    pThread = GetThread();
+
+    CONTEXT context;
+    REGDISPLAY regDisp;
+
+    memset(&context, 0x00, sizeof(T_CONTEXT));
+
+    context.ContextFlags = CONTEXT_FULL;
+    pThread->GetThreadContext(&context);
+
+    FillRegDisplay(&regDisp, &context);
+
+    if (codeInfo.GetCodeManager()->GetParamContextType(&regDisp, &codeInfo) != GENERIC_PARAM_CONTEXT_NONE)
+    {
+      PTR_VOID arg = EECodeManager::GetExactGenericsToken(regDisp.SP, &codeInfo);
+        MethodTable* mt = (MethodTable*)arg;
+    }
+
 #ifdef _TARGET_ARM_
     pCode &= ~1; // clear thumb flag for debug info
 #endif    
@@ -1695,7 +1721,7 @@ void NotifyGdb::MethodCompiled(MethodDesc* MethodDescPtr)
     /* Notify the debugger */
     __jit_debug_descriptor.relevant_entry = jit_symbols;
     __jit_debug_descriptor.action_flag = JIT_REGISTER_FN;
-    __jit_debug_register_code();
+    //__jit_debug_register_code();
 }
 
 void NotifyGdb::MethodDropped(MethodDesc* MethodDescPtr)
