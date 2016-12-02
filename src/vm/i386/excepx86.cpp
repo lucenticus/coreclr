@@ -371,6 +371,7 @@ CPFH_AdjustContextForThreadSuspensionRace(CONTEXT *pContext, Thread *pThread)
 {
     WRAPPER_NO_CONTRACT;
 
+#ifndef FEATURE_PAL
     PCODE f_IP = GetIP(pContext);
     if (Thread::IsAddrOfRedirectFunc((PVOID)f_IP)) {
 
@@ -427,6 +428,9 @@ CPFH_AdjustContextForThreadSuspensionRace(CONTEXT *pContext, Thread *pThread)
         SetIP(pContext, GetIP(pThread->m_OSContext) - 1);
         STRESS_LOG1(LF_EH, LL_INFO100, "CPFH_AdjustContextForThreadSuspensionRace: Case 4 setting IP = %x\n", pContext->Eip);
     }
+#else
+    PORTABILITY_ASSERT("CPFH_AdjustContextForThreadSuspensionRace");
+#endif
 }
 #endif // FEATURE_HIJACK
 
@@ -2019,12 +2023,17 @@ PEXCEPTION_REGISTRATION_RECORD GetCurrentSEHRecord()
 
 PEXCEPTION_REGISTRATION_RECORD GetFirstCOMPlusSEHRecord(Thread *pThread) {
     WRAPPER_NO_CONTRACT;
+#ifndef FEATURE_PAL
     EXCEPTION_REGISTRATION_RECORD *pEHR = *(pThread->GetExceptionListPtr());
     if (pEHR == EXCEPTION_CHAIN_END || IsUnmanagedToManagedSEHHandler(pEHR)) {
         return pEHR;
     } else {
         return GetNextCOMPlusSEHRecord(pEHR);
     }
+#else   // FEATURE_PAL
+    PORTABILITY_ASSERT("GetFirstCOMPlusSEHRecord");
+    return NULL;
+#endif  // FEATURE_PAL
 }
 
 
@@ -2050,7 +2059,11 @@ PEXCEPTION_REGISTRATION_RECORD GetPrevSEHRecord(EXCEPTION_REGISTRATION_RECORD *n
 VOID SetCurrentSEHRecord(EXCEPTION_REGISTRATION_RECORD *pSEH)
 {
     WRAPPER_NO_CONTRACT;
+#ifndef FEATURE_PAL
     *GetThread()->GetExceptionListPtr() = pSEH;
+#else  // FEATURE_PAL
+    _ASSERTE("NYI");
+#endif // FEATURE_PAL
 }
 
 
@@ -2087,6 +2100,7 @@ BOOL PopNestedExceptionRecords(LPVOID pTargetSP, BOOL bCheckForUnknownHandlers)
     STATIC_CONTRACT_GC_NOTRIGGER;
     STATIC_CONTRACT_SO_TOLERANT;
 
+#ifndef FEATURE_PAL
     PEXCEPTION_REGISTRATION_RECORD pEHR = GetCurrentSEHRecord();
 
     while ((LPVOID)pEHR < pTargetSP)
@@ -2142,6 +2156,10 @@ BOOL PopNestedExceptionRecords(LPVOID pTargetSP, BOOL bCheckForUnknownHandlers)
         SetCurrentSEHRecord(pEHR);
     }
     return FALSE;
+#else   // FEATURE_PAL
+    PORTABILITY_ASSERT("PopNestedExceptionRecords");
+    return FALSE;
+#endif  // FEATURE_PAL
 }
 
 //
