@@ -4825,7 +4825,82 @@ VOID StubLinkerCPU::EmitSecureDelegateInvoke(UINT_PTR hash)
     EmitMethodStubEpilog(numStackBytes, SecureDelegateFrame::GetOffsetOfTransitionBlock());
 }
 
-#ifndef FEATURE_ARRAYSTUB_AS_IL
+//===========================================================================
+// Emits code to break into debugger
+VOID StubLinkerCPU::EmitDebugBreak()
+{
+    STANDARD_VM_CONTRACT;
+
+    // int3
+    Emit8(0xCC);
+}
+
+#if defined(FEATURE_COMINTEROP) && defined(_TARGET_X86_)
+
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning (disable : 4740) // There is inline asm code in this function, which disables
+                                 // global optimizations.
+#pragma warning (disable : 4731)
+#endif  // _MSC_VER
+Thread* __stdcall CreateThreadBlockReturnHr(ComMethodFrame *pFrame)
+{
+
+    WRAPPER_NO_CONTRACT;
+
+    Thread *pThread = NULL;
+
+    HRESULT hr = S_OK;
+
+    // This means that a thread is FIRST coming in from outside the EE.
+    BEGIN_ENTRYPOINT_THROWS;
+    pThread = SetupThreadNoThrow(&hr);
+    END_ENTRYPOINT_THROWS;
+
+    if (pThread == NULL) {
+        // Unwind stack, and return hr
+        // NOTE: assumes __stdcall
+        // Note that this code does not handle the rare COM signatures that do not return HRESULT
+        // compute the callee pop stack bytes
+        UINT numArgStackBytes = pFrame->GetNumCallerStackBytes();
+        unsigned frameSize = sizeof(Frame) + sizeof(LPVOID);
+        LPBYTE iEsp = ((LPBYTE)pFrame) + ComMethodFrame::GetOffsetOfCalleeSavedRegisters();
+        __asm
+        {
+            mov eax, hr
+            mov edx, numArgStackBytes
+            //*****************************************
+            // reset the stack pointer
+            // none of the locals above can be used in the asm below
+            // if we wack the stack pointer
+            mov esp, iEsp
+            // pop callee saved registers
+            pop edi
+            pop esi
+            pop ebx
+            pop ebp
+            pop ecx         ; //return address
+            // pop the callee cleanup stack args
+            add esp, edx    ;// callee cleanup of args
+            jmp ecx;        // jump to the address to continue execution
+
+            // We will never get here. This "ret" is just so that code-disassembling
+            // profilers know to stop disassembling any further
+            ret
+        }
+    }
+
+    return pThread;
+}
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
+
+#endif // defined(FEATURE_COMINTEROP) && defined(_TARGET_X86_)
+
+#endif // !defined(CROSSGEN_COMPILE) && !defined(FEATURE_STUBS_AS_IL)
+
+#if !defined(CROSSGEN_COMPILE) && !defined(FEATURE_ARRAYSTUB_AS_IL)
 
 // Little helper to generate code to move nbytes bytes of non Ref memory
 
@@ -5768,82 +5843,7 @@ COPY_VALUE_CLASS:
 #pragma warning(pop)
 #endif
 
-#endif // FEATURE_ARRAYSTUB_AS_IL
-
-//===========================================================================
-// Emits code to break into debugger
-VOID StubLinkerCPU::EmitDebugBreak()
-{
-    STANDARD_VM_CONTRACT;
-
-    // int3
-    Emit8(0xCC);
-}
-
-#if defined(FEATURE_COMINTEROP) && defined(_TARGET_X86_)
-
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning (disable : 4740) // There is inline asm code in this function, which disables
-                                 // global optimizations.
-#pragma warning (disable : 4731)
-#endif  // _MSC_VER
-Thread* __stdcall CreateThreadBlockReturnHr(ComMethodFrame *pFrame)
-{
-
-    WRAPPER_NO_CONTRACT;
-
-    Thread *pThread = NULL;
-
-    HRESULT hr = S_OK;
-
-    // This means that a thread is FIRST coming in from outside the EE.
-    BEGIN_ENTRYPOINT_THROWS;
-    pThread = SetupThreadNoThrow(&hr);
-    END_ENTRYPOINT_THROWS;
-
-    if (pThread == NULL) {
-        // Unwind stack, and return hr
-        // NOTE: assumes __stdcall
-        // Note that this code does not handle the rare COM signatures that do not return HRESULT
-        // compute the callee pop stack bytes
-        UINT numArgStackBytes = pFrame->GetNumCallerStackBytes();
-        unsigned frameSize = sizeof(Frame) + sizeof(LPVOID);
-        LPBYTE iEsp = ((LPBYTE)pFrame) + ComMethodFrame::GetOffsetOfCalleeSavedRegisters();
-        __asm
-        {
-            mov eax, hr
-            mov edx, numArgStackBytes
-            //*****************************************
-            // reset the stack pointer
-            // none of the locals above can be used in the asm below
-            // if we wack the stack pointer
-            mov esp, iEsp
-            // pop callee saved registers
-            pop edi
-            pop esi
-            pop ebx
-            pop ebp
-            pop ecx         ; //return address
-            // pop the callee cleanup stack args
-            add esp, edx    ;// callee cleanup of args
-            jmp ecx;        // jump to the address to continue execution
-
-            // We will never get here. This "ret" is just so that code-disassembling
-            // profilers know to stop disassembling any further
-            ret
-        }
-    }
-
-    return pThread;
-}
-#if defined(_MSC_VER)
-#pragma warning(pop)
-#endif
-
-#endif // defined(FEATURE_COMINTEROP) && defined(_TARGET_X86_)
-
-#endif // !defined(CROSSGEN_COMPILE) && !defined(FEATURE_STUBS_AS_IL)
+#endif // !CROSSGEN_COMPILE && !FEATURE_ARRAYSTUB_AS_IL
 
 #endif // !DACCESS_COMPILE
 
