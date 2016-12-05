@@ -108,6 +108,7 @@ static MethodDesc *gLastResumedExceptionFunc = NULL;
 static DWORD gLastResumedExceptionHandler = 0;
 #endif
 
+#ifndef FEATURE_PAL
 //---------------------------------------------------------------------
 //  void RtlUnwindCallback()
 // call back function after global unwind, rtlunwind calls this function
@@ -117,6 +118,7 @@ static void RtlUnwindCallback()
     LIMITED_METHOD_CONTRACT;
     _ASSERTE(!"Should never get here");
 }
+#endif
 
 BOOL NExportSEH(EXCEPTION_REGISTRATION_RECORD* pEHR)
 {
@@ -573,7 +575,7 @@ EXCEPTION_DISPOSITION ClrDebuggerDoUnwindAndIntercept(EXCEPTION_REGISTRATION_REC
     LOG((LF_EH|LF_CORDB, LL_INFO100, "\t\t: pFunc is 0x%X\n", tct.pFunc));
     LOG((LF_EH|LF_CORDB, LL_INFO100, "\t\t: pStack is 0x%X\n", tct.pStack));
 
-    CallRtlUnwindSafe(pEstablisherFrame, RtlUnwindCallback, pExceptionRecord, 0);
+    //CallRtlUnwindSafe(pEstablisherFrame, RtlUnwindCallback, pExceptionRecord, 0);
 
     ExInfo* pExInfo = pThread->GetExceptionState()->GetCurrentExceptionTracker();
     if (pExInfo->m_ValidInterceptionContext)
@@ -1258,7 +1260,7 @@ CPFH_RealFirstPassHandler(                  // ExceptionContinueSearch, etc.
 
     LOG((LF_EH, LL_INFO100, "CPFH_RealFirstPassHandler: handler found: %s\n", tct.pFunc->m_pszDebugMethodName));
 
-    CallRtlUnwindSafe(pEstablisherFrame, RtlUnwindCallback, pExceptionRecord, 0);
+    //CallRtlUnwindSafe(pEstablisherFrame, RtlUnwindCallback, pExceptionRecord, 0);
     // on x86 at least, RtlUnwind always returns
 
     // Note: we've completed the unwind pass up to the establisher frame, and we're headed off to finish our

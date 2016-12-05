@@ -443,7 +443,7 @@ typedef DECLSPEC_ALIGN(16) struct {
 } DT_CONTEXT;
 
 #else
-#error Unsupported platform
+//#error Unsupported platform
 #endif
 
 

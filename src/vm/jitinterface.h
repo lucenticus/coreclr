@@ -394,7 +394,7 @@ void ValidateWriteBarrierHelpers();
 
 extern "C"
 {
-    void STDCALL JIT_EndCatch();               // JIThelp.asm/JIThelp.s
+  //void STDCALL JIT_EndCatch();               // JIThelp.asm/JIThelp.s
 
     void STDCALL JIT_ByRefWriteBarrier();      // JIThelp.asm/JIThelp.s
 

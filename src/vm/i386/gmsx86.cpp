@@ -30,6 +30,8 @@
 
 
 /***************************************************************/
+
+#ifndef FEATURE_PAL
 #ifndef POISONC
 #define POISONC ((sizeof(int *) == 4)?0xCCCCCCCCU:UI64(0xCCCCCCCCCCCCCCCC))
 #endif
@@ -316,7 +318,6 @@ static bool shouldEnterCall(PTR_BYTE ip) {
 
     return false;
 }
-
 
 /***************************************************************/
 #ifdef _PREFAST_
@@ -1256,3 +1257,5 @@ done:
 #ifdef _PREFAST_
 #pragma warning(pop)
 #endif
+#endif
+

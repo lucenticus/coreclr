@@ -24,7 +24,7 @@ elseif(CLR_CMAKE_PLATFORM_ARCH_I386)
   add_definitions(-DSOS_TARGET_X86=1)
   add_definitions(-D_TARGET_X86_=1)
   add_definitions(-DDBG_TARGET_32BIT)
-  add_definitions(-DSOS_TARGET_ARM=1)
+  #add_definitions(-DSOS_TARGET_ARM=1)
 elseif(CLR_CMAKE_PLATFORM_ARCH_ARM)
   add_definitions(-DSOS_TARGET_ARM=1)
   add_definitions(-D_TARGET_WIN32_=1)
@@ -155,7 +155,7 @@ if(CLR_CMAKE_PLATFORM_ARCH_AMD64)
 elseif(CLR_CMAKE_PLATFORM_ARCH_I386)
   set(SOS_SOURCES_ARCH 
     disasmX86.cpp
-    disasmARM.cpp
+    #disasmARM.cpp
   )
 elseif(CLR_CMAKE_PLATFORM_ARCH_ARM)
   set(SOS_SOURCES_ARCH

@@ -28,6 +28,7 @@ class Thread;
                               // Actually, the handler getting set is properly registered
 #endif
 
+#ifndef FEATURE_PAL
 #define INSTALL_EXCEPTION_HANDLING_RECORD(record)               \
     {                                                           \
         PEXCEPTION_REGISTRATION_RECORD __record = (record);     \
@@ -46,6 +47,11 @@ class Thread;
         _ASSERTE(__record == GetCurrentSEHRecord());            \
         __writefsdword(0, (DWORD)__record->Next);               \
     }
+
+#else
+#define INSTALL_EXCEPTION_HANDLING_RECORD(record)
+#define UNINSTALL_EXCEPTION_HANDLING_RECORD(record)
+#endif
 
 // stackOverwriteBarrier is used to detect overwriting of stack which will mess up handler registration
 #if defined(_DEBUG)

@@ -96,7 +96,7 @@ function(add_executable_clr)
 endfunction()
 
 if(CLR_CMAKE_PLATFORM_UNIX)
-  add_subdirectory(ToolBox/SOS/Strike)
+  #add_subdirectory(ToolBox/SOS/Strike)
 
   # Include the dummy c++ include files
   include_directories("pal/inc/rt/cpp")
@@ -157,7 +157,7 @@ add_subdirectory(strongname)
 add_subdirectory(binder)
 add_subdirectory(classlibnative)
 add_subdirectory(dlls)
-add_subdirectory(ToolBox)
+#add_subdirectory(ToolBox)
 add_subdirectory(tools)
 add_subdirectory(unwinder)
 add_subdirectory(ildasm)

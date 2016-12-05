@@ -462,28 +462,28 @@ HCIMPLEND
 
 #if !defined(_TARGET_X86_) || defined(FEATURE_PAL)
 /*********************************************************************/
-HCIMPL2_VV(UINT64, JIT_LLsh, UINT64 num, int shift)
-{
-    FCALL_CONTRACT;
-    return num << shift;
-}
-HCIMPLEND
+// HCIMPL2_VV(UINT64, JIT_LLsh, UINT64 num, int shift)
+// {
+//     FCALL_CONTRACT;
+//     return num << shift;
+// }
+// HCIMPLEND
 
-/*********************************************************************/
-HCIMPL2_VV(INT64, JIT_LRsh, INT64 num, int shift)
-{
-    FCALL_CONTRACT;
-    return num >> shift;
-}
-HCIMPLEND
+// /*********************************************************************/
+// HCIMPL2_VV(INT64, JIT_LRsh, INT64 num, int shift)
+// {
+//     FCALL_CONTRACT;
+//     return num >> shift;
+// }
+// HCIMPLEND
 
-/*********************************************************************/
-HCIMPL2_VV(UINT64, JIT_LRsz, UINT64 num, int shift)
-{
-    FCALL_CONTRACT;
-    return num >> shift;
-}
-HCIMPLEND
+// /*********************************************************************/
+// HCIMPL2_VV(UINT64, JIT_LRsz, UINT64 num, int shift)
+// {
+//     FCALL_CONTRACT;
+//     return num >> shift;
+// }
+// HCIMPLEND
 
 #endif // !_TARGET_X86_ || FEATURE_PAL
 
@@ -663,7 +663,7 @@ HCIMPL1_V(INT64, JIT_Dbl2Lng, double val)
     return((INT64)val);
 }
 HCIMPLEND
-
+#ifndef FEATURE_PAL
 HCIMPL1_V(int, JIT_Dbl2IntOvf, double val)
 {
     FCALL_CONTRACT;
@@ -677,6 +677,7 @@ HCIMPL1_V(int, JIT_Dbl2IntOvf, double val)
     FCThrow(kOverflowException);
 }
 HCIMPLEND
+#endif // FEATURE_PAL
 
 HCIMPL1_V(INT64, JIT_Dbl2LngOvf, double val)
 {
