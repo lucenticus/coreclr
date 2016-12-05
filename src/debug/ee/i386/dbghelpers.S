@@ -8,7 +8,11 @@
 //extern FuncEvalHijackWorker:proc
 
 // @dbgtodo- once we port Funceval, use the ExceptionHijack stub instead of this func-eval stub.
+#ifdef WIN64EXCEPTIONS
 NESTED_ENTRY FuncEvalHijack, _TEXT, UnhandledExceptionHandlerUnix
+#else
+NESTED_ENTRY FuncEvalHijack, _TEXT, NoHandler
+#endif
         push eax        // the ptr to the DebuggerEval
         call C_FUNC(FuncEvalHijackWorker)
         jmp  eax        // return is the patch addresss to jmp to
