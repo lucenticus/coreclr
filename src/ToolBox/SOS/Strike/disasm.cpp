@@ -38,10 +38,8 @@ namespace X86GCDump
 #undef GC_NOTRIGGER
 #undef _ASSERTE
 #define _ASSERTE(a) do {} while (0)
-#ifndef FEATURE_PAL
 #include "gcdump.cpp"
 #include "i386/gcdumpx86.cpp"
-#endif
 }
 #endif // SOS_TARGET_X86
 

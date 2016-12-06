@@ -531,7 +531,7 @@ if(CLR_CMAKE_PLATFORM_UNIX)
 endif(CLR_CMAKE_PLATFORM_UNIX)
 
 if(CLR_CMAKE_PLATFORM_UNIX)
-  #add_subdirectory(src/ToolBox/SOS/lldbplugin)
+  add_subdirectory(src/ToolBox/SOS/lldbplugin)
   if(NOT DEFINED CLR_CROSS_COMPONENTS_BUILD)
     add_subdirectory(src/pal)
   endif(NOT DEFINED CLR_CROSS_COMPONENTS_BUILD)
